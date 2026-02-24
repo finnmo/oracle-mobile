@@ -49,7 +49,13 @@ export async function handleStatus(_req: Request, env: Env): Promise<Response> {
   if (isActive && row) {
     const hasPub = Boolean(row.chosenPubId && row.pubName);
 
-    if (!hasPub || nowIso < row.announceAtUtc) {
+    // Pub is visible if it was explicitly announced (via API or cron),
+    // OR if the clock has passed the scheduled announce time.
+    // This lets an API-triggered announcement show immediately, even days before Friday.
+    const dbAnnounced = ['announced', 'rating_open', 'closed'].includes(row.status);
+    const pubVisible  = hasPub && (dbAnnounced || nowIso >= row.announceAtUtc);
+
+    if (!pubVisible) {
       state = 'countdown_announce';
     } else if (nowIso < row.rateOpenAtUtc) {
       state = 'announced';

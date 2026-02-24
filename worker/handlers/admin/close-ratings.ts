@@ -4,7 +4,7 @@ import { requireAdmin } from '../../auth';
 import { getNextFridayUtc, computeRoundTimings } from '../../timeUtils';
 
 export async function handleAdminCloseRatings(request: Request, env: Env): Promise<Response> {
-  const authErr = requireAdmin(request, env);
+  const authErr = await requireAdmin(request, env);
   if (authErr) return authErr;
 
   const nowUtc = new Date();

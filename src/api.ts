@@ -1,4 +1,4 @@
-import { StatusResponse, HistoryRound } from './types';
+import { StatusResponse, HistoryRound, StatsResponse } from './types';
 
 const BASE = '/api';
 
@@ -34,6 +34,12 @@ export async function submitRating(
   }
 
   return data.ratings!;
+}
+
+export async function fetchStats(): Promise<StatsResponse> {
+  const res = await fetch(`${BASE}/stats`);
+  if (!res.ok) throw new Error(`Stats fetch failed: ${res.status}`);
+  return res.json() as Promise<StatsResponse>;
 }
 
 export function getOrCreateDeviceId(): string {

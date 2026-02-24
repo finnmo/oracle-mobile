@@ -1,11 +1,21 @@
 import { Env } from './types';
 import { error } from './response';
 
-export function requireAdmin(request: Request, env: Env): Response | null {
-  const auth = request.headers.get('Authorization');
-  if (!auth || auth !== `Bearer ${env.ADMIN_API_TOKEN}`) {
-    return error('Unauthorized', 401);
-  }
+export async function requireAdmin(request: Request, env: Env): Promise<Response | null> {
+  const auth = request.headers.get('Authorization') ?? '';
+  const expected = `Bearer ${env.ADMIN_API_TOKEN ?? ''}`;
+
+  // Constant-time comparison to prevent timing attacks
+  const a = new TextEncoder().encode(auth);
+  const b = new TextEncoder().encode(expected);
+  const len = Math.max(a.length, b.length);
+  const pa = new Uint8Array(len); pa.set(a);
+  const pb = new Uint8Array(len); pb.set(b);
+
+  let diff = a.length !== b.length ? 1 : 0;
+  for (let i = 0; i < len; i++) diff |= pa[i] ^ pb[i];
+
+  if (diff !== 0) return error('Unauthorized', 401);
   return null;
 }
 
