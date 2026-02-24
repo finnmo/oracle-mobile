@@ -1,0 +1,29 @@
+{
+  "name": "oracle-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev:ui": "vite --port 5173",
+    "dev:worker": "wrangler dev --port 8787",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "db:init": "wrangler d1 execute oracle-db --local --file=schema.sql",
+    "db:seed": "wrangler d1 execute oracle-db --local --file=seed.sql",
+    "db:init:remote": "wrangler d1 execute oracle-db --file=schema.sql",
+    "db:seed:remote": "wrangler d1 execute oracle-db --file=seed.sql"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240718.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4",
+    "wrangler": "^3.65.1"
+  }
+}
