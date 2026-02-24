@@ -1,5 +1,6 @@
 import { Env } from '../types';
 import { computeRoundTimings } from '../timeUtils';
+import { pickPubForWeek } from '../utils/pubPicker';
 
 export async function handleCron(event: ScheduledEvent, env: Env): Promise<void> {
   const now = new Date(event.scheduledTime);
@@ -34,7 +35,7 @@ async function announcePub(now: Date, env: Env): Promise<void> {
     return;
   }
 
-  const pubId = await pickRandomPub(env);
+  const pubId = await pickPubForWeek(env, weekKey);
   if (!pubId) {
     console.error('[cron] No active pubs found — cannot announce');
     return;
@@ -100,35 +101,3 @@ async function closeRatings(now: Date, env: Env): Promise<void> {
   console.log(`[cron] Ratings closed for ${weekKey} (changed: ${result.meta.changes})`);
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-async function pickRandomPub(env: Env): Promise<string | null> {
-  const recent = await env.DB.prepare(`
-    SELECT chosenPubId FROM rounds
-    WHERE chosenPubId IS NOT NULL
-    ORDER BY announceAtUtc DESC
-    LIMIT 3
-  `).all<{ chosenPubId: string }>();
-
-  const excluded = recent.results.map((r) => r.chosenPubId);
-
-  let query = 'SELECT id FROM pubs WHERE active = 1';
-  const params: string[] = [];
-
-  if (excluded.length > 0) {
-    query += ` AND id NOT IN (${excluded.map(() => '?').join(',')})`;
-    params.push(...excluded);
-  }
-  query += ' ORDER BY RANDOM() LIMIT 1';
-
-  let pub = await env.DB.prepare(query).bind(...params).first<{ id: string }>();
-
-  // All pubs excluded — fall back to any active pub
-  if (!pub) {
-    pub = await env.DB.prepare(
-      'SELECT id FROM pubs WHERE active = 1 ORDER BY RANDOM() LIMIT 1'
-    ).first<{ id: string }>();
-  }
-
-  return pub?.id ?? null;
-}

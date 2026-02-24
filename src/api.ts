@@ -1,6 +1,8 @@
-import { StatusResponse, HistoryRound, StatsResponse } from './types';
+import { StatusResponse, HistoryRound, StatsResponse, VotesResponse, AdminPub } from './types';
 
 const BASE = '/api';
+
+// ── Public API ────────────────────────────────────────────────────────────────
 
 export async function fetchStatus(): Promise<StatusResponse> {
   const res = await fetch(`${BASE}/status`);
@@ -50,4 +52,105 @@ export function getOrCreateDeviceId(): string {
     localStorage.setItem(key, id);
   }
   return id;
+}
+
+// ── Votes / vetoes ────────────────────────────────────────────────────────────
+
+export async function fetchVotes(deviceId: string): Promise<VotesResponse> {
+  const res = await fetch(`${BASE}/votes?deviceId=${encodeURIComponent(deviceId)}`);
+  if (!res.ok) throw new Error(`Votes fetch failed: ${res.status}`);
+  return res.json() as Promise<VotesResponse>;
+}
+
+export async function castVote(pubId: string, deviceId: string): Promise<void> {
+  const res = await fetch(`${BASE}/votes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pubId, deviceId }),
+  });
+  const data = await res.json() as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? `Vote failed: ${res.status}`);
+}
+
+export async function castVeto(pubId: string, deviceId: string): Promise<void> {
+  const res = await fetch(`${BASE}/vetoes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pubId, deviceId }),
+  });
+  const data = await res.json() as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? `Veto failed: ${res.status}`);
+}
+
+// ── Admin API ─────────────────────────────────────────────────────────────────
+
+export function getAdminToken(): string | null {
+  return sessionStorage.getItem('oracle_admin_token');
+}
+export function setAdminToken(token: string): void {
+  sessionStorage.setItem('oracle_admin_token', token);
+}
+export function clearAdminToken(): void {
+  sessionStorage.removeItem('oracle_admin_token');
+}
+
+async function adminFetch(path: string, options: RequestInit = {}): Promise<{ res: Response; data: unknown }> {
+  const res = await fetch(`/api/admin${path}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${getAdminToken() ?? ''}`,
+      'Content-Type': 'application/json',
+      ...(options.headers ?? {}),
+    },
+  });
+  const data = await res.json();
+  if (res.status === 401) {
+    clearAdminToken();
+    throw new Error('Unauthorized — check your token');
+  }
+  if (!res.ok) throw new Error((data as Record<string, string>).error ?? 'Request failed');
+  return { res, data };
+}
+
+export async function adminAnnounce(body: { pubName?: string; force?: boolean } = {}): Promise<unknown> {
+  const { data } = await adminFetch('/announce', { method: 'POST', body: JSON.stringify(body) });
+  return data;
+}
+
+export async function adminReset(): Promise<unknown> {
+  const { data } = await adminFetch('/reset', { method: 'POST', body: '{}' });
+  return data;
+}
+
+export async function adminOpenRatings(): Promise<unknown> {
+  const { data } = await adminFetch('/open-ratings', { method: 'POST', body: '{}' });
+  return data;
+}
+
+export async function adminCloseRatings(): Promise<unknown> {
+  const { data } = await adminFetch('/close-ratings', { method: 'POST', body: '{}' });
+  return data;
+}
+
+export async function adminListPubs(): Promise<AdminPub[]> {
+  const { data } = await adminFetch('/pubs', { method: 'GET' });
+  return (data as { pubs: AdminPub[] }).pubs;
+}
+
+export async function adminAddPub(name: string, address?: string, mapsUrl?: string): Promise<AdminPub> {
+  const { data } = await adminFetch('/pubs', {
+    method: 'POST',
+    body: JSON.stringify({ name, address: address || undefined, mapsUrl: mapsUrl || undefined }),
+  });
+  return (data as { pub: AdminPub }).pub;
+}
+
+export async function adminUpdatePub(id: string, updates: Partial<AdminPub>): Promise<AdminPub> {
+  const { data } = await adminFetch(`/pubs/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
+  return (data as { pub: AdminPub }).pub;
+}
+
+export async function adminDeletePub(id: string): Promise<{ action: string }> {
+  const { data } = await adminFetch(`/pubs/${id}`, { method: 'DELETE' });
+  return data as { action: string };
 }

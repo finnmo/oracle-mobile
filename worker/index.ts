@@ -4,6 +4,8 @@ import { handleStatus } from './handlers/status';
 import { handleRatings } from './handlers/ratings';
 import { handlePubs } from './handlers/pubs';
 import { handleRounds } from './handlers/rounds';
+import { handleVotes } from './handlers/votes';
+import { handleVetoes } from './handlers/vetoes';
 import { handleAdminAnnounce } from './handlers/admin/announce';
 import { handleAdminOpenRatings } from './handlers/admin/open-ratings';
 import { handleAdminCloseRatings } from './handlers/admin/close-ratings';
@@ -28,6 +30,8 @@ export default {
         if (path === '/api/pubs'                 && method === 'GET')  return handlePubs(request, env);
         if (path === '/api/rounds'               && method === 'GET')  return handleRounds(request, env);
         if (path === '/api/stats'                && method === 'GET')  return handleStats(request, env);
+        if (path === '/api/votes')                                     return handleVotes(request, env);
+        if (path === '/api/vetoes'               && method === 'POST') return handleVetoes(request, env);
         if (path === '/api/ratings'              && method === 'POST') return handleRatings(request, env);
         if (path === '/api/admin/announce'       && method === 'POST') return handleAdminAnnounce(request, env);
         if (path === '/api/admin/open-ratings'   && method === 'POST') return handleAdminOpenRatings(request, env);

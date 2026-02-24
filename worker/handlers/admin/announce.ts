@@ -2,6 +2,7 @@ import { Env } from '../../types';
 import { json, error } from '../../response';
 import { requireAdmin } from '../../auth';
 import { computeRoundTimings, getNextFridayUtc } from '../../timeUtils';
+import { pickPubForWeek } from '../../utils/pubPicker';
 
 interface AnnounceBody {
   pubId?: string;
@@ -82,7 +83,7 @@ export async function handleAdminAnnounce(request: Request, env: Env): Promise<R
   } else if (body.force || !pubId) {
     // force = re-pick random even if a pub is already set
     // !pubId = no pub yet, pick one now
-    pubId = await pickRandomPub(env);
+    pubId = await pickPubForWeek(env, weekKey);
     if (!pubId) return error('No active pubs available', 500);
   }
 
@@ -132,35 +133,4 @@ export async function handleAdminAnnounce(request: Request, env: Env): Promise<R
       : null,
     round,
   });
-}
-
-async function pickRandomPub(env: Env): Promise<string | null> {
-  const recent = await env.DB.prepare(`
-    SELECT chosenPubId FROM rounds
-    WHERE chosenPubId IS NOT NULL
-    ORDER BY announceAtUtc DESC
-    LIMIT 3
-  `).all<{ chosenPubId: string }>();
-
-  const excluded = recent.results.map((r) => r.chosenPubId);
-
-  let query  = 'SELECT id FROM pubs WHERE active = 1';
-  const params: string[] = [];
-
-  if (excluded.length > 0) {
-    query += ` AND id NOT IN (${excluded.map(() => '?').join(',')})`;
-    params.push(...excluded);
-  }
-  query += ' ORDER BY RANDOM() LIMIT 1';
-
-  let pub = await env.DB.prepare(query).bind(...params).first<{ id: string }>();
-
-  // All pubs excluded — fall back to any active pub
-  if (!pub) {
-    pub = await env.DB.prepare(
-      'SELECT id FROM pubs WHERE active = 1 ORDER BY RANDOM() LIMIT 1'
-    ).first<{ id: string }>();
-  }
-
-  return pub?.id ?? null;
 }

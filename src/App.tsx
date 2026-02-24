@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import confetti from 'canvas-confetti';
 import { StatusResponse } from './types';
 import { fetchStatus } from './api';
 import CountdownTimer from './components/CountdownTimer';
@@ -6,14 +7,43 @@ import PubCard from './components/PubCard';
 import RatingSection from './components/RatingSection';
 import HistorySection from './components/HistorySection';
 import StatsDrawer from './components/StatsDrawer';
+import VotingSection from './components/VotingSection';
+import AdminPage from './components/AdminPage';
 
 const POLL_INTERVAL_MS = 30_000;
 
+// ── Simple hash-based routing ─────────────────────────────────────────────────
+
+function useHashRoute() {
+  const [hash, setHash] = useState(window.location.hash);
+  useEffect(() => {
+    const handler = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', handler);
+    return () => window.removeEventListener('hashchange', handler);
+  }, []);
+  return hash;
+}
+
 export default function App() {
+  const hash = useHashRoute();
+
+  if (hash === '#admin') {
+    return <AdminPage onBack={() => { window.location.hash = ''; }} />;
+  }
+
+  return <MainApp />;
+}
+
+// ── Main app ──────────────────────────────────────────────────────────────────
+
+function MainApp() {
   const [status, setStatus]     = useState<StatusResponse | null>(null);
   const [loading, setLoading]   = useState(true);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Confetti: fire once when state transitions to 'announced'
+  const confettiFiredRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -27,27 +57,46 @@ export default function App() {
     }
   }, []);
 
-  // Initial load + polling
   useEffect(() => {
     load();
     const id = setInterval(load, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [load]);
 
-  // Re-sync on tab focus
   useEffect(() => {
     window.addEventListener('focus', load);
     return () => window.removeEventListener('focus', load);
   }, [load]);
+
+  // Fire confetti when pub is revealed
+  useEffect(() => {
+    if (status?.state === 'announced' && !confettiFiredRef.current) {
+      confettiFiredRef.current = true;
+      confetti({
+        particleCount: 120,
+        spread: 80,
+        origin: { y: 0.4 },
+        colors: ['#f59e0b', '#fcd34d', '#fbbf24', '#e8f0f8', '#7d9ab5'],
+      });
+    }
+  }, [status?.state]);
 
   return (
     <div className="app">
       <header className="header">
         <h1>Oracle</h1>
         <p>Pub of the Week</p>
-        <button className="hamburger" onClick={() => setMenuOpen(true)} aria-label="Open stats">
-          <span /><span /><span />
-        </button>
+        <nav className="header-nav">
+          <button
+            className="btn btn-secondary header-admin-btn"
+            onClick={() => { window.location.hash = 'admin'; }}
+          >
+            Admin
+          </button>
+          <button className="hamburger" onClick={() => setMenuOpen(true)} aria-label="Open stats">
+            <span /><span /><span />
+          </button>
+        </nav>
       </header>
 
       <StatsDrawer open={menuOpen} onClose={() => setMenuOpen(false)} />
@@ -74,7 +123,7 @@ export default function App() {
   );
 }
 
-// ─── Status view ─────────────────────────────────────────────────────────────
+// ── Status view ───────────────────────────────────────────────────────────────
 
 function StatusView({ status, onRefresh }: { status: StatusResponse; onRefresh: () => void }) {
   const { state, round, ratings, serverNowUtc } = status;
@@ -88,6 +137,7 @@ function StatusView({ status, onRefresh }: { status: StatusResponse; onRefresh: 
             serverNowUtc={serverNowUtc}
             label="Announcing in"
           />
+          <VotingSection />
         </>
       )}
 
@@ -146,4 +196,3 @@ function StatusView({ status, onRefresh }: { status: StatusResponse; onRefresh: 
     </>
   );
 }
-
