@@ -2,6 +2,7 @@
   "name": "oracle-mobile",
   "private": true,
   "version": "1.0.0",
+  "type": "module",
   "scripts": {
     "dev:ui": "vite --port 5173",
     "dev:worker": "wrangler dev --port 8787",
@@ -11,7 +12,8 @@
     "db:init": "wrangler d1 execute oracle-db --local --file=schema.sql",
     "db:seed": "wrangler d1 execute oracle-db --local --file=seed.sql",
     "db:init:remote": "wrangler d1 execute oracle-db --remote --file=schema.sql",
-    "db:seed:remote": "wrangler d1 execute oracle-db --remote --file=seed.sql"
+    "db:seed:remote": "wrangler d1 execute oracle-db --remote --file=seed.sql",
+    "icons": "node scripts/generate-icons.js"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",
@@ -24,6 +26,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "sharp": "^0.34.5",
     "typescript": "^5.5.3",
     "vite": "^5.3.4",
     "wrangler": "^4.68.0"
