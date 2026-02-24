@@ -561,3 +561,284 @@ textarea::placeholder { color: var(--text-muted); }
   font-size: 12px;
   color: var(--text-muted);
 }
+
+/* ── Header nav (admin button + hamburger) ─────────────────────────────────── */
+.header-nav {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-admin-btn {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+/* ── Pub map embed ─────────────────────────────────────────────────────────── */
+.pub-map-wrap {
+  margin: 12px 0;
+}
+.pub-map {
+  width: 100%;
+  height: 180px;
+  border: none;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+.pub-map-toggle {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.pub-map-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ── Voting section ────────────────────────────────────────────────────────── */
+.vote-card { margin-bottom: 12px; }
+
+.vote-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.vote-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.vote-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s;
+}
+.vote-row--mine {
+  border-color: var(--accent);
+}
+.vote-row--vetoed {
+  opacity: 0.55;
+}
+
+.vote-row-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vote-pub-name {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.veto-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--red);
+  background: rgba(239, 68, 68, 0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.vote-bar-track {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.vote-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  min-width: 2px;
+}
+.vote-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.vote-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.vote-btn {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+.vote-btn--active {
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+}
+.veto-btn {
+  font-size: 11px;
+  padding: 5px 10px;
+  color: var(--red);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.veto-btn:hover {
+  border-color: var(--red);
+}
+.veto-used-label {
+  font-size: 11px;
+  color: var(--red);
+  white-space: nowrap;
+}
+
+.vote-footnote {
+  font-size: 12px;
+  margin-top: 10px;
+  line-height: 1.5;
+}
+
+/* ── Admin page ────────────────────────────────────────────────────────────── */
+.admin-back-btn {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.admin-back-btn:hover { color: var(--text); }
+
+.admin-logout-btn {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.admin-custom-announce {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.admin-custom-announce .admin-input { flex: 1; }
+
+.admin-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  margin-bottom: 8px;
+}
+.admin-input:focus {
+  outline: 2px solid var(--accent);
+  border-color: transparent;
+}
+.admin-input::placeholder { color: var(--text-muted); }
+
+.admin-result {
+  margin-top: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.admin-pub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+.admin-pub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.admin-pub-row--inactive {
+  opacity: 0.5;
+}
+.admin-pub-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.admin-pub-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-pub-addr {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-pub-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.admin-pub-toggle {
+  font-size: 12px;
+  padding: 5px 10px;
+}
+.admin-pub-delete {
+  font-size: 13px;
+  padding: 5px 10px;
+  color: var(--red);
+}
+
+.admin-add-pub {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 4px;
+}

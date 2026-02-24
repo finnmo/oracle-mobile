@@ -45,3 +45,28 @@ CREATE INDEX IF NOT EXISTS idx_rounds_weekKey
 
 CREATE INDEX IF NOT EXISTS idx_ratings_roundId
   ON ratings(roundId);
+
+-- Weekly pub votes (one per device per week, can change their vote)
+CREATE TABLE IF NOT EXISTS votes (
+  id          TEXT PRIMARY KEY,
+  weekKey     TEXT NOT NULL,
+  pubId       TEXT NOT NULL REFERENCES pubs(id),
+  deviceHash  TEXT NOT NULL,
+  createdAt   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  UNIQUE(weekKey, deviceHash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_votes_weekKey ON votes(weekKey);
+
+-- Pub vetoes: one per device per calendar month, excludes pub from random pick
+CREATE TABLE IF NOT EXISTS vetoes (
+  id          TEXT PRIMARY KEY,
+  weekKey     TEXT NOT NULL,
+  pubId       TEXT NOT NULL REFERENCES pubs(id),
+  deviceHash  TEXT NOT NULL,
+  monthKey    TEXT NOT NULL, -- YYYY-MM
+  createdAt   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  UNIQUE(monthKey, deviceHash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vetoes_weekKey ON vetoes(weekKey);

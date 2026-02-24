@@ -53,3 +53,32 @@ export interface StatsResponse {
   totalRatings: number;
   bestPub: PubStat | null;
 }
+
+// ── Voting / veto ────────────────────────────────────────────────────────────
+
+export interface BallotPub {
+  id: string;
+  name: string;
+  address: string | null;
+  votes: number;
+  vetoed: boolean;
+}
+
+export interface VotesResponse {
+  weekKey: string;
+  pubs: BallotPub[];
+  totalVotes: number;
+  userVote: string | null;
+  userVetoedPubId: string | null;
+  userVetoUsed: boolean;
+}
+
+// ── Admin ────────────────────────────────────────────────────────────────────
+
+export interface AdminPub {
+  id: string;
+  name: string;
+  address: string | null;
+  mapsUrl: string | null;
+  active: number;
+}
