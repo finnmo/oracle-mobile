@@ -38,3 +38,18 @@ export interface HistoryRound {
   average: number | null;
   ratingCount: number;
 }
+
+export interface PubStat {
+  id: string;
+  name: string;
+  visits: number;
+  avgScore: number | null;
+  ratingCount: number;
+}
+
+export interface StatsResponse {
+  pubs: PubStat[];
+  totalVisits: number;
+  totalRatings: number;
+  bestPub: PubStat | null;
+}

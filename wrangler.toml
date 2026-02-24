@@ -9,7 +9,7 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "oracle-db"
-database_id = "945829fe-613d-4678-a22f-96fd747dadf1"
+database_id = "YOUR_D1_DATABASE_ID"
 
 [vars]
 # Set ADMIN_API_TOKEN via: wrangler secret put ADMIN_API_TOKEN

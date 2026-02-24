@@ -6,12 +6,26 @@ import { computeRoundTimings, getNextFridayUtc } from '../../timeUtils';
 interface AnnounceBody {
   pubId?: string;
   pubName?: string;
-  weekKey?: string;  // Override which Friday (YYYY-MM-DD)
-  force?: boolean;   // Re-announce even if already chosen
+  weekKey?: string; // Target a specific Friday (YYYY-MM-DD). Defaults to next Friday.
+  force?: boolean;  // Override an already-chosen pub with a new random pick.
+}
+
+interface RoundResult {
+  id: string;
+  weekKey: string;
+  announceAtUtc: string;
+  meetAtUtc: string;
+  rateOpenAtUtc: string;
+  rateCloseAtUtc: string;
+  status: string;
+  chosenBy: string;
+  pubId: string;
+  pubName: string;
+  pubAddress: string | null;
 }
 
 export async function handleAdminAnnounce(request: Request, env: Env): Promise<Response> {
-  const authErr = requireAdmin(request, env);
+  const authErr = await requireAdmin(request, env);
   if (authErr) return authErr;
 
   let body: AnnounceBody = {};
@@ -23,21 +37,33 @@ export async function handleAdminAnnounce(request: Request, env: Env): Promise<R
   }
 
   const nowUtc = new Date();
+  const nowIso = nowUtc.toISOString();
 
-  // Determine which Friday we are targeting
+  // ── 1. Determine target Friday ─────────────────────────────────────────────
   let fridayDate: Date;
   if (body.weekKey) {
     fridayDate = new Date(`${body.weekKey}T02:00:00.000Z`);
-    if (isNaN(fridayDate.getTime())) return error('Invalid weekKey format (expected YYYY-MM-DD)', 400);
+    if (isNaN(fridayDate.getTime())) {
+      return error('Invalid weekKey — expected YYYY-MM-DD', 400);
+    }
   } else {
     fridayDate = getNextFridayUtc(nowUtc);
   }
 
-  const timings = computeRoundTimings(fridayDate);
+  const timings    = computeRoundTimings(fridayDate);
   const { weekKey } = timings;
 
-  // Resolve the pub to use
-  let pubId: string | null = null;
+  // ── 2. Resolve which pub to use ────────────────────────────────────────────
+  const existing = await env.DB.prepare(
+    'SELECT id, chosenPubId FROM rounds WHERE weekKey = ?'
+  ).bind(weekKey).first<{ id: string; chosenPubId: string | null }>();
+
+  // Pub resolution rules:
+  //   - pubId / pubName supplied → always use that pub, overriding any existing choice
+  //   - force: true (no pub specified) → pick a fresh random pub, overriding existing
+  //   - nothing supplied + round already has a pub → keep existing pub
+  //   - nothing supplied + no pub yet → pick random
+  let pubId: string | null = existing?.chosenPubId ?? null;
 
   if (body.pubId) {
     const pub = await env.DB.prepare(
@@ -53,34 +79,21 @@ export async function handleAdminAnnounce(request: Request, env: Env): Promise<R
     if (!pub) return error(`No active pub named "${body.pubName}"`, 404);
     pubId = pub.id;
 
-  } else {
+  } else if (body.force || !pubId) {
+    // force = re-pick random even if a pub is already set
+    // !pubId = no pub yet, pick one now
     pubId = await pickRandomPub(env);
     if (!pubId) return error('No active pubs available', 500);
   }
 
-  const nowIso = nowUtc.toISOString();
-
-  // Upsert the round
-  const existing = await env.DB.prepare(
-    'SELECT id, chosenPubId, status FROM rounds WHERE weekKey = ?'
-  ).bind(weekKey).first<{ id: string; chosenPubId: string | null; status: string }>();
-
+  // ── 3. Upsert the round ────────────────────────────────────────────────────
+  // Always sets status = 'announced' so the frontend shows the pub immediately.
   if (existing) {
-    if (existing.chosenPubId && !body.force) {
-      // Already announced — only update pub if caller explicitly specified one
-      if (body.pubId || body.pubName) {
-        await env.DB.prepare(`
-          UPDATE rounds SET chosenPubId = ?, chosenAtUtc = ?, chosenBy = 'api'
-          WHERE weekKey = ?
-        `).bind(pubId, nowIso, weekKey).run();
-      }
-    } else {
-      await env.DB.prepare(`
-        UPDATE rounds
-        SET chosenPubId = ?, chosenAtUtc = ?, chosenBy = 'api', status = 'announced'
-        WHERE weekKey = ?
-      `).bind(pubId, nowIso, weekKey).run();
-    }
+    await env.DB.prepare(`
+      UPDATE rounds
+      SET chosenPubId = ?, chosenAtUtc = ?, chosenBy = 'api', status = 'announced'
+      WHERE weekKey = ?
+    `).bind(pubId, nowIso, weekKey).run();
   } else {
     await env.DB.prepare(`
       INSERT INTO rounds
@@ -99,18 +112,29 @@ export async function handleAdminAnnounce(request: Request, env: Env): Promise<R
     ).run();
   }
 
+  // ── 4. Return the round with pub info ─────────────────────────────────────
   const round = await env.DB.prepare(`
-    SELECT r.*, p.name AS pubName, p.address AS pubAddress
+    SELECT r.id, r.weekKey, r.announceAtUtc, r.meetAtUtc, r.rateOpenAtUtc, r.rateCloseAtUtc,
+           r.status, r.chosenBy,
+           p.id      AS pubId,
+           p.name    AS pubName,
+           p.address AS pubAddress
     FROM rounds r
     JOIN pubs p ON r.chosenPubId = p.id
     WHERE r.weekKey = ?
-  `).bind(weekKey).first();
+  `).bind(weekKey).first<RoundResult>();
 
-  return json({ ok: true, weekKey, round });
+  return json({
+    ok: true,
+    weekKey,
+    pub: round
+      ? { id: round.pubId, name: round.pubName, address: round.pubAddress }
+      : null,
+    round,
+  });
 }
 
 async function pickRandomPub(env: Env): Promise<string | null> {
-  // Avoid the last 3 chosen pubs to prevent repeats
   const recent = await env.DB.prepare(`
     SELECT chosenPubId FROM rounds
     WHERE chosenPubId IS NOT NULL
@@ -118,20 +142,20 @@ async function pickRandomPub(env: Env): Promise<string | null> {
     LIMIT 3
   `).all<{ chosenPubId: string }>();
 
-  const recentIds = recent.results.map((r) => r.chosenPubId);
+  const excluded = recent.results.map((r) => r.chosenPubId);
 
-  let query = 'SELECT id FROM pubs WHERE active = 1';
+  let query  = 'SELECT id FROM pubs WHERE active = 1';
   const params: string[] = [];
 
-  if (recentIds.length > 0) {
-    query += ` AND id NOT IN (${recentIds.map(() => '?').join(',')})`;
-    params.push(...recentIds);
+  if (excluded.length > 0) {
+    query += ` AND id NOT IN (${excluded.map(() => '?').join(',')})`;
+    params.push(...excluded);
   }
   query += ' ORDER BY RANDOM() LIMIT 1';
 
   let pub = await env.DB.prepare(query).bind(...params).first<{ id: string }>();
 
-  // Fallback: if all pubs are in the exclusion list, pick any active pub
+  // All pubs excluded — fall back to any active pub
   if (!pub) {
     pub = await env.DB.prepare(
       'SELECT id FROM pubs WHERE active = 1 ORDER BY RANDOM() LIMIT 1'

@@ -5,13 +5,15 @@ import CountdownTimer from './components/CountdownTimer';
 import PubCard from './components/PubCard';
 import RatingSection from './components/RatingSection';
 import HistorySection from './components/HistorySection';
+import StatsDrawer from './components/StatsDrawer';
 
 const POLL_INTERVAL_MS = 30_000;
 
 export default function App() {
-  const [status, setStatus]   = useState<StatusResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [status, setStatus]     = useState<StatusResponse | null>(null);
+  const [loading, setLoading]   = useState(true);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -43,7 +45,12 @@ export default function App() {
       <header className="header">
         <h1>Oracle</h1>
         <p>Pub of the Week</p>
+        <button className="hamburger" onClick={() => setMenuOpen(true)} aria-label="Open stats">
+          <span /><span /><span />
+        </button>
       </header>
+
+      <StatsDrawer open={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <main>
         {loading && !status && (
@@ -140,13 +147,3 @@ function StatusView({ status, onRefresh }: { status: StatusResponse; onRefresh: 
   );
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function formatFridayDate(utcIso: string): string {
-  return new Date(utcIso).toLocaleDateString('en-AU', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'Australia/Perth',
-  });
-}

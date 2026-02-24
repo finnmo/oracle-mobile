@@ -1,31 +1,31 @@
 # Oracle — Pub of the Week
 
-Mobile-first web app for the weekly Friday pub selector. Built on Cloudflare Workers + D1 + Pages Assets.
+Mobile-first web app for the weekly Friday pub selector. Built on Cloudflare Workers + D1.
 
 ---
 
 ## Stack
 
-| Layer    | Tech                                  |
-|----------|---------------------------------------|
-| Frontend | React + TypeScript + Vite             |
-| Backend  | Cloudflare Worker (TypeScript)        |
-| Database | Cloudflare D1 (SQLite)                |
-| Hosting  | Cloudflare Workers Static Assets      |
-| Cron     | Cloudflare Scheduled Triggers         |
+| Layer    | Tech                              |
+|----------|-----------------------------------|
+| Frontend | React + TypeScript + Vite         |
+| Backend  | Cloudflare Worker (TypeScript)    |
+| Database | Cloudflare D1 (SQLite)            |
+| Hosting  | Cloudflare Workers Static Assets  |
+| Cron     | Cloudflare Scheduled Triggers     |
 
 ---
 
-## Timezone
+## Weekly schedule (Perth / UTC+8)
 
-Perth (UTC+8). All times stored in UTC. Key schedule:
+| Event         | Perth time | UTC cron          |
+|---------------|------------|-------------------|
+| Pub announced | Fri 10:00  | `0 2 * * 5`       |
+| Meet time     | Fri 12:00  | *(display only)*  |
+| Ratings open  | Fri 12:20  | `20 4 * * 5`      |
+| Ratings close | Fri 23:59  | `59 15 * * 6`     |
 
-| Event          | Perth      | UTC (cron)           |
-|----------------|------------|----------------------|
-| Announce pub   | Fri 10:00  | Fri 02:00 `0 2 * * 5`   |
-| Meet time      | Fri 12:00  | Fri 04:00            |
-| Ratings open   | Fri 12:20  | Fri 04:20 `20 4 * * 5`  |
-| Ratings close  | Fri 23:59  | Sat 15:59 `59 15 * * 6` |
+The cron jobs run automatically. The admin API can trigger any of these early.
 
 ---
 
@@ -43,28 +43,36 @@ npm install
 npx wrangler d1 create oracle-db
 ```
 
-Copy the `database_id` from the output and paste it into `wrangler.toml`:
+Copy the `database_id` from the output into `wrangler.toml`:
 
 ```toml
 [[d1_databases]]
 binding = "DB"
 database_name = "oracle-db"
-database_id = "YOUR_ACTUAL_ID_HERE"
+database_id = "YOUR_ID_HERE"
 ```
 
-### 3. Initialise schema + seed pubs
+### 3. Apply schema and seed pubs
+
+Edit `seed.sql` with your pub list, then:
 
 ```bash
 # Local dev
 npm run db:init && npm run db:seed
 
-# Remote (production)
+# Production (remote)
 npm run db:init:remote && npm run db:seed:remote
 ```
 
-Edit `seed.sql` with your actual pub list first.
+To wipe and re-seed local data at any time:
 
-### 4. Set the admin token secret
+```bash
+npx wrangler d1 execute oracle-db --local \
+  --command "DELETE FROM ratings; DELETE FROM rounds; DELETE FROM pubs;"
+npm run db:seed
+```
+
+### 4. Set the admin secret
 
 ```bash
 npx wrangler secret put ADMIN_API_TOKEN
@@ -78,10 +86,10 @@ npx wrangler secret put ADMIN_API_TOKEN
 Run both servers in separate terminals:
 
 ```bash
-# Terminal 1 — Worker dev server (port 8787)
+# Terminal 1 — Worker + D1 (port 8787)
 npm run dev:worker
 
-# Terminal 2 — Vite UI dev server (port 5173, proxies /api → 8787)
+# Terminal 2 — Vite UI with hot reload (port 5173, proxies /api → 8787)
 npm run dev:ui
 ```
 
@@ -95,7 +103,7 @@ Open http://localhost:5173
 npm run deploy
 ```
 
-This builds the frontend and deploys the Worker + assets to Cloudflare.
+Builds the frontend then deploys Worker + assets to Cloudflare. Cron triggers are registered automatically.
 
 ---
 
@@ -106,55 +114,204 @@ All admin endpoints require:
 Authorization: Bearer <ADMIN_API_TOKEN>
 ```
 
-### Announce early / specify a pub
+### Announce a pub
 
 ```bash
-# Random pub (honouring the last-3-weeks exclusion rule)
-curl -X POST https://oracle.your-domain.workers.dev/api/admin/announce \
-  -H "Authorization: Bearer TOKEN"
+BASE="https://your-worker.workers.dev"
+TOKEN="your-token"
 
-# Specific pub by ID
-curl -X POST .../api/admin/announce \
-  -H "Authorization: Bearer TOKEN" \
+# Pick a random pub (skips last 3 chosen)
+curl -X POST "$BASE/api/admin/announce" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Specify a pub by name (always overrides existing choice)
+curl -X POST "$BASE/api/admin/announce" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"pubName": "The Como"}'
+
+# Specify a pub by ID
+curl -X POST "$BASE/api/admin/announce" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"pubId": "pub-001"}'
 
-# Specific pub by name
-curl -X POST .../api/admin/announce \
-  -d '{"pubName": "The Rosemount Hotel"}'
+# Force a fresh random pick (overrides existing choice)
+curl -X POST "$BASE/api/admin/announce" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"force": true}'
+```
 
-# Force re-announce (overrides existing choice)
-curl -X POST .../api/admin/announce \
-  -d '{"pubName": "The Newport Hotel", "force": true}'
+**Behaviour:**
+- Calling announce sets `status = "announced"` immediately — the pub shows on the frontend right away, regardless of what day of the week it is.
+- If the cron fires later on Friday, it sees a pub is already chosen and does nothing.
+- Providing `pubId` or `pubName` **always** overwrites the current selection, no `force` flag needed.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "weekKey": "2026-02-27",
+  "pub": { "id": "pub-001", "name": "The Como", "address": "..." },
+  "round": { "id": "...", "status": "announced", "chosenBy": "api", ... }
+}
+```
+
+### Reset the announcement
+
+Clears the current pub selection and returns the round to `scheduled`, so the Friday cron will pick a fresh random pub. Blocked if ratings are already open or closed.
+
+```bash
+curl -X POST "$BASE/api/admin/reset" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### Open / close ratings manually
 
 ```bash
-curl -X POST .../api/admin/open-ratings  -H "Authorization: Bearer TOKEN"
-curl -X POST .../api/admin/close-ratings -H "Authorization: Bearer TOKEN"
+curl -X POST "$BASE/api/admin/open-ratings"  -H "Authorization: Bearer $TOKEN"
+curl -X POST "$BASE/api/admin/close-ratings" -H "Authorization: Bearer $TOKEN"
+```
+
+### Manage pubs
+
+```bash
+# List all pubs (including inactive)
+curl "$BASE/api/admin/pubs" -H "Authorization: Bearer $TOKEN"
+
+# Add a pub
+curl -X POST "$BASE/api/admin/pubs" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"The Generous Squire","address":"123 Hay St, Perth WA 6000","mapsUrl":"https://maps.google.com/?q=..."}'
+
+# Update a pub (any combination of fields)
+curl -X PATCH "$BASE/api/admin/pubs/pub-001" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"The Como Hotel","active":true}'
+
+# Delete a pub
+# — Hard deletes if never used in a round
+# — Deactivates (hides from selection) if it has history
+curl -X DELETE "$BASE/api/admin/pubs/pub-001" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Reactivate a deactivated pub
+curl -X PATCH "$BASE/api/admin/pubs/pub-001" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"active":true}'
 ```
 
 ---
 
-## Python script hook
+## Python integration
 
 ```python
-import os, requests
+import os
+import requests
 
-TOKEN  = os.environ["ORACLE_ADMIN_TOKEN"]
-BASE   = "https://oracle.your-domain.workers.dev"
+TOKEN = os.environ["ORACLE_ADMIN_TOKEN"]
+BASE  = "https://your-worker.workers.dev"
 
-def announce(pub_name: str | None = None):
-    body = {"pubName": pub_name} if pub_name else {}
-    r = requests.post(
-        f"{BASE}/api/admin/announce",
-        json=body,
-        headers={"Authorization": f"Bearer {TOKEN}"},
-    )
+HEADERS = {
+    "Authorization": f"Bearer {TOKEN}",
+    "Content-Type": "application/json",
+}
+
+
+def announce(pub_name: str | None = None, pub_id: str | None = None, force: bool = False) -> dict:
+    """Announce this week's pub. Pub shows immediately on the frontend."""
+    body = {}
+    if pub_name:
+        body["pubName"] = pub_name
+    elif pub_id:
+        body["pubId"] = pub_id
+    elif force:
+        body["force"] = True
+
+    r = requests.post(f"{BASE}/api/admin/announce", json=body, headers=HEADERS)
     r.raise_for_status()
     return r.json()
+
+
+def reset() -> dict:
+    """Clear the current announcement so the cron picks a fresh pub on Friday."""
+    r = requests.post(f"{BASE}/api/admin/reset", headers=HEADERS)
+    r.raise_for_status()
+    return r.json()
+
+
+def open_ratings() -> dict:
+    r = requests.post(f"{BASE}/api/admin/open-ratings", headers=HEADERS)
+    r.raise_for_status()
+    return r.json()
+
+
+def close_ratings() -> dict:
+    r = requests.post(f"{BASE}/api/admin/close-ratings", headers=HEADERS)
+    r.raise_for_status()
+    return r.json()
+
+
+def list_pubs() -> list[dict]:
+    r = requests.get(f"{BASE}/api/admin/pubs", headers=HEADERS)
+    r.raise_for_status()
+    return r.json()["pubs"]
+
+
+def add_pub(name: str, address: str | None = None, maps_url: str | None = None) -> dict:
+    body = {"name": name, "address": address, "mapsUrl": maps_url}
+    r = requests.post(f"{BASE}/api/admin/pubs", json=body, headers=HEADERS)
+    r.raise_for_status()
+    return r.json()["pub"]
+
+
+def update_pub(pub_id: str, **kwargs) -> dict:
+    """kwargs: name, address, mapsUrl, active (bool)"""
+    r = requests.patch(f"{BASE}/api/admin/pubs/{pub_id}", json=kwargs, headers=HEADERS)
+    r.raise_for_status()
+    return r.json()["pub"]
+
+
+def delete_pub(pub_id: str) -> dict:
+    r = requests.delete(f"{BASE}/api/admin/pubs/{pub_id}", headers=HEADERS)
+    r.raise_for_status()
+    return r.json()  # {"ok": true, "action": "deleted" | "deactivated"}
+
+
+# ── Usage examples ────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    # Announce a specific pub right now (shows on frontend immediately)
+    result = announce(pub_name="The Como")
+    print(result["pub"]["name"])
+
+    # Force a fresh random pick
+    announce(force=True)
+
+    # Change the pub after the initial announcement
+    announce(pub_name="Baillie Hill")
+
+    # Reset so cron picks on Friday
+    reset()
 ```
+
+---
+
+## Public API
+
+These endpoints require no authentication:
+
+| Method | Path           | Description                              |
+|--------|----------------|------------------------------------------|
+| GET    | `/api/status`  | Current state, round info, ratings       |
+| GET    | `/api/rounds`  | Last 12 closed rounds (history)          |
+| GET    | `/api/stats`   | Per-pub visit counts and average ratings |
+| GET    | `/api/pubs`    | Active pub list                          |
+| POST   | `/api/ratings` | Submit a rating (window enforced)        |
 
 ---
 
@@ -162,34 +319,38 @@ def announce(pub_name: str | None = None):
 
 ```
 oracle-mobile/
-├── worker/               Cloudflare Worker (API + cron)
-│   ├── index.ts          Router entry point
-│   ├── types.ts          Shared TypeScript interfaces
-│   ├── timeUtils.ts      Perth/UTC time helpers
-│   ├── response.ts       JSON/CORS helpers
-│   ├── auth.ts           Admin auth + hashing
+├── worker/
+│   ├── index.ts              Router
+│   ├── types.ts              Env + DB interfaces
+│   ├── timeUtils.ts          Perth/UTC helpers
+│   ├── response.ts           JSON/CORS helpers
+│   ├── auth.ts               Bearer auth + SHA-256
 │   ├── handlers/
-│   │   ├── status.ts     GET /api/status
-│   │   ├── ratings.ts    POST /api/ratings
-│   │   ├── pubs.ts       GET /api/pubs
-│   │   ├── rounds.ts     GET /api/rounds (history)
+│   │   ├── status.ts         GET /api/status
+│   │   ├── ratings.ts        POST /api/ratings
+│   │   ├── pubs.ts           GET /api/pubs
+│   │   ├── rounds.ts         GET /api/rounds
+│   │   ├── stats.ts          GET /api/stats
 │   │   └── admin/
-│   │       ├── announce.ts
+│   │       ├── announce.ts   POST /api/admin/announce
+│   │       ├── reset.ts      POST /api/admin/reset
 │   │       ├── open-ratings.ts
-│   │       └── close-ratings.ts
+│   │       ├── close-ratings.ts
+│   │       └── pubs.ts       GET/POST/PATCH/DELETE /api/admin/pubs
 │   └── cron/
-│       └── friday.ts     Scheduled cron logic
-├── src/                  React frontend
+│       └── friday.ts         Scheduled cron logic
+├── src/
 │   ├── App.tsx
-│   ├── api.ts            fetch wrappers
+│   ├── api.ts
 │   ├── types.ts
 │   ├── index.css
 │   └── components/
 │       ├── CountdownTimer.tsx
 │       ├── PubCard.tsx
 │       ├── RatingSection.tsx
-│       └── HistorySection.tsx
-├── schema.sql            D1 table definitions
-├── seed.sql              Initial pub data
-└── wrangler.toml         Cloudflare config
+│       ├── HistorySection.tsx
+│       └── StatsDrawer.tsx   Hamburger menu + pub stats chart
+├── schema.sql
+├── seed.sql
+└── wrangler.toml
 ```
