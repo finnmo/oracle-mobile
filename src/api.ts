@@ -98,7 +98,7 @@ async function adminFetch(path: string, options: RequestInit = {}): Promise<{ re
   const res = await fetch(`/api/admin${path}`, {
     ...options,
     headers: {
-      Authorization: `Bearer ${getAdminToken() ?? ''}`,
+      Authorization: `Bearer ${(getAdminToken() ?? '').replace(/[^\x20-\x7E]/g, '')}`,
       'Content-Type': 'application/json',
       ...(options.headers ?? {}),
     },
