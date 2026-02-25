@@ -2,6 +2,13 @@ import { Env, AppState } from '../types';
 import { json } from '../response';
 import { getNextRoundTimings } from '../timeUtils';
 
+export type StatusPayload = {
+  serverNowUtc: string;
+  state: AppState;
+  round: Record<string, unknown>;
+  ratings: { average: number; count: number } | null;
+};
+
 interface RoundRow {
   id: string;
   weekKey: string;
@@ -23,7 +30,7 @@ interface RatingStats {
   count: number;
 }
 
-export async function handleStatus(_req: Request, env: Env): Promise<Response> {
+export async function buildStatus(env: Env): Promise<StatusPayload> {
   const nowUtc = new Date();
   const nowIso = nowUtc.toISOString();
 
@@ -115,5 +122,9 @@ export async function handleStatus(_req: Request, env: Env): Promise<Response> {
     }
   }
 
-  return json({ serverNowUtc: nowIso, state, round: roundPayload, ratings });
+  return { serverNowUtc: nowIso, state, round: roundPayload, ratings };
+}
+
+export async function handleStatus(_req: Request, env: Env): Promise<Response> {
+  return json(await buildStatus(env));
 }

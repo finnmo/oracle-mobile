@@ -12,6 +12,7 @@ import { handleAdminCloseRatings } from './handlers/admin/close-ratings';
 import { handleAdminPubs } from './handlers/admin/pubs';
 import { handleAdminReset } from './handlers/admin/reset';
 import { handleStats } from './handlers/stats';
+import { handleEvents } from './handlers/events';
 import { handleCron } from './cron/friday';
 
 export default {
@@ -27,6 +28,7 @@ export default {
     if (path.startsWith('/api/')) {
       try {
         if (path === '/api/status'               && method === 'GET')  return handleStatus(request, env);
+        if (path === '/api/events'               && method === 'GET')  return handleEvents(request, env);
         if (path === '/api/pubs'                 && method === 'GET')  return handlePubs(request, env);
         if (path === '/api/rounds'               && method === 'GET')  return handleRounds(request, env);
         if (path === '/api/stats'                && method === 'GET')  return handleStats(request, env);

@@ -10,7 +10,7 @@ import StatsDrawer from './components/StatsDrawer';
 import VotingSection from './components/VotingSection';
 import AdminPage from './components/AdminPage';
 
-const POLL_INTERVAL_MS = 30_000;
+const POLL_INTERVAL_MS = 30_000; // fallback polling interval when SSE is active
 
 // ── Simple hash-based routing ─────────────────────────────────────────────────
 
@@ -57,15 +57,62 @@ function MainApp() {
     }
   }, []);
 
+  // SSE for real-time updates; falls back to polling if unsupported
   useEffect(() => {
-    load();
-    const id = setInterval(load, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    load(); // immediate fetch on mount
+
+    if (typeof EventSource === 'undefined') {
+      // No SSE support — fall back to polling
+      const id = setInterval(load, POLL_INTERVAL_MS);
+      return () => clearInterval(id);
+    }
+
+    let es: EventSource;
+    let fallbackTimer: ReturnType<typeof setInterval>;
+
+    const connect = () => {
+      es = new EventSource('/api/events');
+
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setStatus(data);
+          setLoading(false);
+          setFetchErr(null);
+        } catch { /* ignore malformed events */ }
+      };
+
+      es.onerror = () => {
+        // EventSource auto-reconnects; start a fallback poll in case it can't
+        clearInterval(fallbackTimer);
+        fallbackTimer = setInterval(load, POLL_INTERVAL_MS);
+      };
+
+      es.onopen = () => {
+        // SSE connected — stop fallback polling
+        clearInterval(fallbackTimer);
+      };
+    };
+
+    connect();
+    // Fallback poll so we never go stale if SSE is slow to connect
+    fallbackTimer = setInterval(load, POLL_INTERVAL_MS);
+
+    return () => {
+      es?.close();
+      clearInterval(fallbackTimer);
+    };
   }, [load]);
 
+  // Re-fetch immediately when the app regains focus/visibility (e.g. switching back on mobile)
   useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
     window.addEventListener('focus', load);
-    return () => window.removeEventListener('focus', load);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', load);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [load]);
 
   // Fire confetti when pub is revealed
@@ -85,7 +132,7 @@ function MainApp() {
     <div className="app">
       <header className="header">
         <h1>Oracle</h1>
-        <p>Pub of the Week</p>
+        <p>🍺🍗🍷🥩 Pub of the Week</p>
         <nav className="header-nav">
           <button
             className="btn btn-secondary header-admin-btn"
