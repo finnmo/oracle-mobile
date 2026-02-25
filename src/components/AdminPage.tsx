@@ -15,7 +15,8 @@ export default function AdminPage({ onBack }: Props) {
   const [authed, setAuthed] = useState(!!getAdminToken());
 
   const handleLogin = () => {
-    const t = token.trim();
+    // Strip any non-ASCII characters (e.g. em-dashes from copy-paste) before storing
+    const t = token.trim().replace(/[^\x20-\x7E]/g, '');
     if (!t) return;
     setAdminToken(t);
     setAuthed(true);
