@@ -41,6 +41,10 @@ export async function handleAdminAnnounce(request: Request, env: Env): Promise<R
   const nowIso = nowUtc.toISOString();
 
   // ── 1. Determine target Friday ─────────────────────────────────────────────
+  // If a weekKey is explicitly supplied, use it.
+  // Otherwise, latch onto whichever round is currently active so the announcement
+  // always overrides it — ensuring there is never more than one active round.
+  // Only fall back to computing the next Friday when no active round exists.
   let fridayDate: Date;
   if (body.weekKey) {
     fridayDate = new Date(`${body.weekKey}T02:00:00.000Z`);
@@ -48,7 +52,13 @@ export async function handleAdminAnnounce(request: Request, env: Env): Promise<R
       return error('Invalid weekKey — expected YYYY-MM-DD', 400);
     }
   } else {
-    fridayDate = getNextFridayUtc(nowUtc);
+    const activeRound = await env.DB.prepare(
+      'SELECT weekKey FROM rounds WHERE rateCloseAtUtc > ? ORDER BY announceAtUtc DESC LIMIT 1'
+    ).bind(nowIso).first<{ weekKey: string }>();
+
+    fridayDate = activeRound
+      ? new Date(`${activeRound.weekKey}T02:00:00.000Z`)
+      : getNextFridayUtc(nowUtc);
   }
 
   const timings    = computeRoundTimings(fridayDate);

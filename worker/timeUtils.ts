@@ -39,22 +39,17 @@ export function computeRoundTimings(fridayUtc: Date): RoundTimings {
 }
 
 /**
- * Given any UTC Date, return the Date for the next Friday (or this Friday
- * if it's currently before Friday 02:00 UTC).
+ * Given any UTC Date, return the Date for the current or next Friday.
+ * If today is Friday, always returns this Friday (round stays active until Saturday 15:59 UTC).
+ * On Saturday or later, naturally advances to next Friday.
  */
 export function getNextFridayUtc(now: Date): Date {
   const day = now.getUTCDay(); // 0=Sun … 5=Fri … 6=Sat
 
   let daysUntil = (5 - day + 7) % 7;
 
-  if (daysUntil === 0) {
-    // Today is Friday
-    if (now.getUTCHours() >= 2) {
-      // Past announce time — target next Friday
-      daysUntil = 7;
-    }
-    // else: before announce time — this Friday is the target (daysUntil = 0)
-  }
+  // If today is Friday, always target this Friday — the round stays active
+  // until Saturday 15:59 UTC, at which point day !== 5 and daysUntil > 0 naturally.
 
   const friday = new Date(now);
   friday.setUTCDate(now.getUTCDate() + daysUntil);
