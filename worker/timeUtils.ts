@@ -1,6 +1,6 @@
 // All times are stored and compared in UTC as ISO 8601 strings.
 // Perth is UTC+8. Key mappings:
-//   Friday 10:00 Perth = Friday 02:00 UTC  → announcement
+//   Friday 11:45 Perth = Friday 03:45 UTC  → announcement
 //   Friday 12:00 Perth = Friday 04:00 UTC  → meet time
 //   Friday 12:20 Perth = Friday 04:20 UTC  → ratings open
 //   Friday 23:59 Perth = Saturday 15:59 UTC → ratings close
@@ -23,7 +23,7 @@ export function computeRoundTimings(fridayUtc: Date): RoundTimings {
   const d = String(fridayUtc.getUTCDate()).padStart(2, '0');
   const weekKey = `${y}-${m}-${d}`;
 
-  const announceAtUtc  = `${weekKey}T02:00:00.000Z`; // 10:00 Perth
+  const announceAtUtc  = `${weekKey}T03:45:00.000Z`; // 11:45 Perth
   const meetAtUtc      = `${weekKey}T04:00:00.000Z`; // 12:00 Perth
   const rateOpenAtUtc  = `${weekKey}T04:20:00.000Z`; // 12:20 Perth
 

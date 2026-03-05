@@ -6,7 +6,7 @@ export async function handleCron(event: ScheduledEvent, env: Env): Promise<void>
   const now = new Date(event.scheduledTime);
 
   switch (event.cron) {
-    case '0 2 * * 6':   // Friday 02:00 UTC → announce pub
+    case '45 3 * * 6':  // Friday 03:45 UTC → announce pub
       await announcePub(now, env);
       break;
     case '20 4 * * 6':  // Friday 04:20 UTC → open ratings
