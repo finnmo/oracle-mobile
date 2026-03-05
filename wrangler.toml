@@ -16,7 +16,7 @@ database_id = "945829fe-613d-4678-a22f-96fd747dadf1"
 
 [triggers]
 crons = [
-  "0 2 * * 6",   # Friday 02:00 UTC = Friday 10:00 Perth — announce pub
+  "45 3 * * 6",  # Friday 03:45 UTC = Friday 11:45 Perth — announce pub (if not already chosen)
   "20 4 * * 6",  # Friday 04:20 UTC = Friday 12:20 Perth — open ratings
   "59 15 * * 7"  # Saturday 15:59 UTC = Friday 23:59 Perth — close ratings
 ]
