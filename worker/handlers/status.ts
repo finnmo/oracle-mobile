@@ -58,7 +58,7 @@ export async function buildStatus(env: Env): Promise<StatusPayload> {
 
     // Pub is visible if it was explicitly announced (via API or cron),
     // OR if the clock has passed the scheduled announce time.
-    // This lets an API-triggered announcement show immediately, even days before Friday.
+    // This lets an API-triggered announcement show immediately, even days before the scheduled announce.
     const dbAnnounced = ['announced', 'rating_open', 'closed'].includes(row.status);
     const pubVisible  = hasPub && (dbAnnounced || nowIso >= row.announceAtUtc);
 
@@ -90,7 +90,7 @@ export async function buildStatus(env: Env): Promise<StatusPayload> {
         : null,
     };
   } else {
-    // Between rounds — compute next Friday's schedule without a DB record
+    // Between rounds — compute next round schedule (Perth Fri, or Thu if Fri is a WA PH)
     state = 'countdown_announce';
     const timings = getNextRoundTimings(nowUtc);
     roundPayload = {

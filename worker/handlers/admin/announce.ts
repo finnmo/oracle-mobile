@@ -1,13 +1,13 @@
 import { Env } from '../../types';
 import { json, error } from '../../response';
 import { requireAdmin } from '../../auth';
-import { computeRoundTimings, getNextFridayUtc } from '../../timeUtils';
+import { computeRoundTimingsFromAnchorYmd, getVoteAndRoundAnchorPerthYmd } from '../../timeUtils';
 import { pickPubForWeek } from '../../utils/pubPicker';
 
 interface AnnounceBody {
   pubId?: string;
   pubName?: string;
-  weekKey?: string; // Target a specific Friday (YYYY-MM-DD). Defaults to next Friday.
+  weekKey?: string; // Target a specific round anchor (YYYY-MM-DD, usually Fri; Thu when Fri is a WA PH).
   force?: boolean;  // Override an already-chosen pub with a new random pick.
 }
 
@@ -40,28 +40,24 @@ export async function handleAdminAnnounce(request: Request, env: Env): Promise<R
   const nowUtc = new Date();
   const nowIso = nowUtc.toISOString();
 
-  // ── 1. Determine target Friday ─────────────────────────────────────────────
-  // If a weekKey is explicitly supplied, use it.
-  // Otherwise, latch onto whichever round is currently active so the announcement
-  // always overrides it — ensuring there is never more than one active round.
-  // Only fall back to computing the next Friday when no active round exists.
-  let fridayDate: Date;
+  // ── 1. Determine target round anchor (Perth calendar day) ─────────────────
+  // If weekKey is supplied, use it. Otherwise prefer the active round, else the
+  // upcoming anchor (Friday, or Thursday when Friday is a WA public holiday).
+  let anchorYmd: string;
   if (body.weekKey) {
-    fridayDate = new Date(`${body.weekKey}T02:00:00.000Z`);
-    if (isNaN(fridayDate.getTime())) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.weekKey)) {
       return error('Invalid weekKey — expected YYYY-MM-DD', 400);
     }
+    anchorYmd = body.weekKey;
   } else {
     const activeRound = await env.DB.prepare(
       'SELECT weekKey FROM rounds WHERE rateCloseAtUtc > ? ORDER BY announceAtUtc DESC LIMIT 1'
     ).bind(nowIso).first<{ weekKey: string }>();
 
-    fridayDate = activeRound
-      ? new Date(`${activeRound.weekKey}T02:00:00.000Z`)
-      : getNextFridayUtc(nowUtc);
+    anchorYmd = activeRound ? activeRound.weekKey : getVoteAndRoundAnchorPerthYmd(nowUtc);
   }
 
-  const timings    = computeRoundTimings(fridayDate);
+  const timings = computeRoundTimingsFromAnchorYmd(anchorYmd);
   const { weekKey } = timings;
 
   // ── 2. Resolve which pub to use ────────────────────────────────────────────

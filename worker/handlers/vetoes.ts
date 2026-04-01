@@ -1,7 +1,7 @@
 import { Env } from '../types';
 import { json, error } from '../response';
 import { sha256 } from '../auth';
-import { getNextFridayUtc, computeRoundTimings } from '../timeUtils';
+import { getVoteAndRoundAnchorPerthYmd } from '../timeUtils';
 
 interface VetoBody {
   pubId: string;
@@ -30,9 +30,8 @@ async function castVeto(request: Request, env: Env): Promise<Response> {
   ).bind(pubId).first<{ id: string }>();
   if (!pub) return error('Pub not found or inactive', 404);
 
-  const nowUtc   = new Date();
-  const friday   = getNextFridayUtc(nowUtc);
-  const { weekKey } = computeRoundTimings(friday);
+  const nowUtc = new Date();
+  const weekKey = getVoteAndRoundAnchorPerthYmd(nowUtc);
 
   // Veto window closes once pub is announced
   const round = await env.DB.prepare(

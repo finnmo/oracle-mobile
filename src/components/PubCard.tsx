@@ -36,7 +36,7 @@ export default function PubCard({ pub, showBadge = true }: Props) {
 
   return (
     <div className="card pub-card">
-      {showBadge && <div className="card-label">Hey, it is Friday! We are going to</div>}
+      {showBadge && <div className="card-label">Hey — we&apos;re going to</div>}
       <h2 className="pub-name">{pub.name}</h2>
       {pub.address && <p className="pub-address">{pub.address}</p>}
 

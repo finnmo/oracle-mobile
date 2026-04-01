@@ -1,7 +1,7 @@
 import { Env } from '../types';
 import { json, error } from '../response';
 import { sha256 } from '../auth';
-import { getNextFridayUtc, computeRoundTimings } from '../timeUtils';
+import { getVoteAndRoundAnchorPerthYmd } from '../timeUtils';
 
 interface VoteBody {
   pubId: string;
@@ -29,9 +29,8 @@ export async function handleVotes(request: Request, env: Env): Promise<Response>
 // ── GET /api/votes ─────────────────────────────────────────────────────────
 
 async function getVotes(request: Request, env: Env): Promise<Response> {
-  const nowUtc  = new Date();
-  const friday  = getNextFridayUtc(nowUtc);
-  const { weekKey } = computeRoundTimings(friday);
+  const nowUtc = new Date();
+  const weekKey = getVoteAndRoundAnchorPerthYmd(nowUtc);
 
   // Identify caller for personalisation (optional — no error if missing)
   const url      = new URL(request.url);
@@ -119,9 +118,8 @@ async function castVote(request: Request, env: Env): Promise<Response> {
   ).bind(pubId).first<{ id: string }>();
   if (!pub) return error('Pub not found or inactive', 404);
 
-  const nowUtc   = new Date();
-  const friday   = getNextFridayUtc(nowUtc);
-  const { weekKey } = computeRoundTimings(friday);
+  const nowUtc = new Date();
+  const weekKey = getVoteAndRoundAnchorPerthYmd(nowUtc);
 
   // Voting closes once the pub is announced
   const round = await env.DB.prepare(

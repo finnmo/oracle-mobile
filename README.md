@@ -1,6 +1,6 @@
 # Oracle — Pub of the Week
 
-Mobile-first web app for the weekly Friday pub selector. Built on Cloudflare Workers + D1.
+Mobile-first web app for the weekly pub selector (Perth time). Built on Cloudflare Workers + D1.
 
 ---
 
@@ -18,12 +18,20 @@ Mobile-first web app for the weekly Friday pub selector. Built on Cloudflare Wor
 
 ## Weekly schedule (Perth / UTC+8)
 
-| Event         | Perth time | UTC cron          |
-|---------------|------------|-------------------|
-| Pub announced | Fri 10:00  | `0 2 * * 5`       |
-| Meet time     | Fri 12:00  | *(display only)*  |
-| Ratings open  | Fri 12:20  | `20 4 * * 5`      |
-| Ratings close | Fri 23:59  | `59 15 * * 6`     |
+Default week: **anchor = calendar Friday** in Perth. If that Friday is a **Western Australia public holiday**, the whole round moves to the **previous Thursday** (same local clock times: announce 11:45, meet 12:00, ratings open 12:20, ratings close 23:59 Perth on the calendar day after the anchor).
+
+WA holiday dates are listed in `worker/waPublicHolidays.ts` (sourced from [publicholidays.com.au/western-australia](https://publicholidays.com.au/western-australia/) and the [WA government site](https://www.wa.gov.au/service/employment/workplace-arrangements/public-holidays-western-australia); update yearly, especially 2028+).
+
+| Event         | Perth time (normal week) | UTC crons (see `wrangler.toml`) |
+|---------------|--------------------------|-----------------------------------|
+| Pub announced | Thu/Fri 11:45            | `45 3 * * 4,5` (Thu + Fri)        |
+| Meet time     | Thu/Fri 12:00            | *(display only)*                  |
+| Ratings open  | Thu/Fri 12:20            | `20 4 * * 4,5`                    |
+| Ratings close | Fri/Sat 23:59 Perth\*    | `59 15 * * 5,6`                   |
+
+(Combined weekday lists keep the Worker under Cloudflare’s per-script cron limit.)
+
+\*Close is always `rateCloseAtUtc` in D1 (next calendar day after anchor at 15:59 UTC). Open/close cron handlers apply to **any** round whose timestamps have passed, so Thursday-anchor and Friday-anchor weeks both work.
 
 The cron jobs run automatically. The admin API can trigger any of these early.
 
@@ -145,7 +153,7 @@ curl -X POST "$BASE/api/admin/announce" \
 
 **Behaviour:**
 - Calling announce sets `status = "announced"` immediately — the pub shows on the frontend right away, regardless of what day of the week it is.
-- If the cron fires later on Friday, it sees a pub is already chosen and does nothing.
+- If the cron fires later on the announce day (Thursday or Friday in Perth, per WA holidays), it sees a pub is already chosen and does nothing.
 - Providing `pubId` or `pubName` **always** overwrites the current selection, no `force` flag needed.
 
 **Response:**
@@ -160,7 +168,7 @@ curl -X POST "$BASE/api/admin/announce" \
 
 ### Reset the announcement
 
-Clears the current pub selection and returns the round to `scheduled`, so the Friday cron will pick a fresh random pub. Blocked if ratings are already open or closed.
+Clears the current pub selection and returns the round to `scheduled`, so the next announce cron will pick a fresh random pub. Blocked if ratings are already open or closed.
 
 ```bash
 curl -X POST "$BASE/api/admin/reset" \
@@ -295,7 +303,7 @@ if __name__ == "__main__":
     # Change the pub after the initial announcement
     announce(pub_name="Baillie Hill")
 
-    # Reset so cron picks on Friday
+    # Reset so cron picks on the next announce day
     reset()
 ```
 
@@ -322,7 +330,8 @@ oracle-mobile/
 ├── worker/
 │   ├── index.ts              Router
 │   ├── types.ts              Env + DB interfaces
-│   ├── timeUtils.ts          Perth/UTC helpers
+│   ├── timeUtils.ts          Perth anchor + round timestamps
+│   ├── waPublicHolidays.ts   WA public holiday dates (Thu shift when Fri is PH)
 │   ├── response.ts           JSON/CORS helpers
 │   ├── auth.ts               Bearer auth + SHA-256
 │   ├── handlers/
