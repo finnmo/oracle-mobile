@@ -1,17 +1,22 @@
 import { Env } from '../../types';
 import { json, error } from '../../response';
 import { requireAdmin } from '../../auth';
-import { getNextFridayUtc, computeRoundTimings } from '../../timeUtils';
+import { getVoteAndRoundAnchorPerthYmd } from '../../timeUtils';
 
 export async function handleAdminCloseRatings(request: Request, env: Env): Promise<Response> {
   const authErr = await requireAdmin(request, env);
   if (authErr) return authErr;
 
   const nowUtc = new Date();
+  const nowIso = nowUtc.toISOString();
 
-  // Target this or next Friday
-  const friday = getNextFridayUtc(nowUtc);
-  const { weekKey } = computeRoundTimings(friday);
+  const activeRound = await env.DB.prepare(
+    'SELECT weekKey FROM rounds WHERE rateCloseAtUtc > ? ORDER BY announceAtUtc DESC LIMIT 1'
+  )
+    .bind(nowIso)
+    .first<{ weekKey: string }>();
+
+  const weekKey = activeRound?.weekKey ?? getVoteAndRoundAnchorPerthYmd(nowUtc);
 
   const result = await env.DB.prepare(`
     UPDATE rounds

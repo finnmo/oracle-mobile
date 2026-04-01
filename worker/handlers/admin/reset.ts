@@ -1,15 +1,22 @@
 import { Env } from '../../types';
 import { json, error } from '../../response';
 import { requireAdmin } from '../../auth';
-import { getNextFridayUtc, computeRoundTimings } from '../../timeUtils';
+import { getVoteAndRoundAnchorPerthYmd } from '../../timeUtils';
 
 export async function handleAdminReset(request: Request, env: Env): Promise<Response> {
   const authErr = await requireAdmin(request, env);
   if (authErr) return authErr;
 
   const nowUtc = new Date();
-  const friday = getNextFridayUtc(nowUtc);
-  const { weekKey } = computeRoundTimings(friday);
+  const nowIso = nowUtc.toISOString();
+
+  const activeRound = await env.DB.prepare(
+    'SELECT weekKey FROM rounds WHERE rateCloseAtUtc > ? ORDER BY announceAtUtc DESC LIMIT 1'
+  )
+    .bind(nowIso)
+    .first<{ weekKey: string }>();
+
+  const weekKey = activeRound?.weekKey ?? getVoteAndRoundAnchorPerthYmd(nowUtc);
 
   const existing = await env.DB.prepare(
     'SELECT id, status FROM rounds WHERE weekKey = ?'
@@ -37,6 +44,7 @@ export async function handleAdminReset(request: Request, env: Env): Promise<Resp
     ok: true,
     weekKey,
     status: 'scheduled',
-    message: 'Round cleared — cron will pick a random pub on Friday, or call /api/admin/announce to set one manually',
+    message:
+      'Round cleared — cron will pick a random pub on the next announce day (Thursday if Friday is a WA public holiday), or call /api/admin/announce to set one manually',
   });
 }
