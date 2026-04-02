@@ -12,6 +12,7 @@ import { handleAdminCloseRatings } from './handlers/admin/close-ratings';
 import { handleAdminPubs } from './handlers/admin/pubs';
 import { handleAdminReset } from './handlers/admin/reset';
 import { handleStats } from './handlers/stats';
+import { handlePubComments } from './handlers/pub-comments';
 import { handleEvents } from './handlers/events';
 import { handleCron } from './cron/friday';
 
@@ -32,6 +33,8 @@ export default {
         if (path === '/api/pubs'                 && method === 'GET')  return handlePubs(request, env);
         if (path === '/api/rounds'               && method === 'GET')  return handleRounds(request, env);
         if (path === '/api/stats'                && method === 'GET')  return handleStats(request, env);
+        if (path.match(/^\/api\/pubs\/[^/]+\/comments$/) && method === 'GET')
+          return handlePubComments(request, env);
         if (path === '/api/votes')                                     return handleVotes(request, env);
         if (path === '/api/vetoes'               && method === 'POST') return handleVetoes(request, env);
         if (path === '/api/ratings'              && method === 'POST') return handleRatings(request, env);

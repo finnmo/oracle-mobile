@@ -14,6 +14,8 @@ Mobile-first web app for the weekly pub selector (Perth time). Built on Cloudfla
 | Hosting  | Cloudflare Workers Static Assets  |
 | Cron     | Cloudflare Scheduled Triggers     |
 
+There is **no user login**. Each phone/browser gets a random **`deviceId`** in `localStorage` — one vote per week, one rating per round, one veto per month, tied to that id. **We do not rate-limit by Wi‑Fi** (shared networks are expected). Users can **withdraw their vote** while voting is open (`POST /api/votes` with `{ deviceId, clear: true }`). IP-based caps were removed for this reason.
+
 ---
 
 ## Weekly schedule (Perth / UTC+8)
@@ -318,8 +320,11 @@ These endpoints require no authentication:
 | GET    | `/api/status`  | Current state, round info, ratings       |
 | GET    | `/api/rounds`  | Last 12 closed rounds (history)          |
 | GET    | `/api/stats`   | Per-pub visit counts and average ratings |
+| GET    | `/api/pubs/:id/comments` | Per-pub rating history (closed rounds), newest first |
 | GET    | `/api/pubs`    | Active pub list                          |
-| POST   | `/api/ratings` | Submit a rating (window enforced)        |
+| GET    | `/api/votes?deviceId=` | Ballot + your vote (if `deviceId` sent) |
+| POST   | `/api/votes`   | `{"pubId","deviceId"}` to vote; `{"deviceId","clear":true}` to undo |
+| POST   | `/api/ratings` | Submit a rating (`deviceId` required)    |
 
 ---
 
@@ -340,6 +345,7 @@ oracle-mobile/
 │   │   ├── pubs.ts           GET /api/pubs
 │   │   ├── rounds.ts         GET /api/rounds
 │   │   ├── stats.ts          GET /api/stats
+│   │   ├── pub-comments.ts   GET /api/pubs/:id/comments
 │   │   └── admin/
 │   │       ├── announce.ts   POST /api/admin/announce
 │   │       ├── reset.ts      POST /api/admin/reset

@@ -1,4 +1,11 @@
-import { StatusResponse, HistoryRound, StatsResponse, VotesResponse, AdminPub } from './types';
+import {
+  StatusResponse,
+  HistoryRound,
+  StatsResponse,
+  VotesResponse,
+  AdminPub,
+  PubReviewsResponse,
+} from './types';
 
 const BASE = '/api';
 
@@ -44,6 +51,12 @@ export async function fetchStats(): Promise<StatsResponse> {
   return res.json() as Promise<StatsResponse>;
 }
 
+export async function fetchPubReviews(pubId: string): Promise<PubReviewsResponse> {
+  const res = await fetch(`${BASE}/pubs/${encodeURIComponent(pubId)}/comments`);
+  if (!res.ok) throw new Error(`Reviews fetch failed: ${res.status}`);
+  return res.json() as Promise<PubReviewsResponse>;
+}
+
 export function getOrCreateDeviceId(): string {
   const key = 'oracle_device_id';
   let id = localStorage.getItem(key);
@@ -70,6 +83,17 @@ export async function castVote(pubId: string, deviceId: string): Promise<void> {
   });
   const data = await res.json() as { error?: string };
   if (!res.ok) throw new Error(data.error ?? `Vote failed: ${res.status}`);
+}
+
+/** Remove this device’s vote for the current week (only your deviceId can do this). */
+export async function clearVote(deviceId: string): Promise<void> {
+  const res = await fetch(`${BASE}/votes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId, clear: true }),
+  });
+  const data = await res.json() as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? `Could not clear vote: ${res.status}`);
 }
 
 export async function castVeto(pubId: string, deviceId: string): Promise<void> {

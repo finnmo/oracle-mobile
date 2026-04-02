@@ -57,23 +57,12 @@ export async function handleRatings(request: Request, env: Env): Promise<Respons
     return error('No pub has been chosen for this round', 400);
   }
 
-  // Build a device fingerprint from the supplied deviceId or fall back to IP
   const ip = request.headers.get('CF-Connecting-IP') ?? request.headers.get('X-Forwarded-For') ?? '';
   const ipHash = ip ? await sha256(ip) : null;
-  const deviceHash = deviceId ? await sha256(deviceId) : ipHash;
-
-  // Rate limit: max 5 attempts per IP per round (guards against device-ID farming)
-  if (ipHash) {
-    const ipCount = await env.DB.prepare(
-      'SELECT COUNT(*) AS count FROM ratings WHERE roundId = ? AND ipHash = ?'
-    ).bind(roundId, ipHash).first<{ count: number }>();
-    if ((ipCount?.count ?? 0) >= 5) {
-      return error('Too many rating attempts from this network', 429);
-    }
-  }
+  const deviceHash = deviceId ? await sha256(deviceId) : null;
 
   if (!deviceHash) {
-    return error('Could not identify device', 400);
+    return error('deviceId is required to submit a rating', 400);
   }
 
   try {

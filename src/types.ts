@@ -54,6 +54,19 @@ export interface StatsResponse {
   bestPub: PubStat | null;
 }
 
+export interface PubReview {
+  weekKey: string;
+  score: number;
+  comment: string | null;
+  createdAtUtc: string;
+}
+
+export interface PubReviewsResponse {
+  pubId: string;
+  name: string;
+  reviews: PubReview[];
+}
+
 // ── Voting / veto ────────────────────────────────────────────────────────────
 
 export interface BallotPub {

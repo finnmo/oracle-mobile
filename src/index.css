@@ -226,15 +226,51 @@ textarea { font-family: inherit; }
   color: var(--text-muted);
   margin-bottom: 12px;
 }
+.stats-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: -6px 0 14px;
+  font-style: italic;
+}
 .stats-chart {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-.pub-bar-row {
+.pub-bar-block {
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: border-color 0.2s, background 0.2s;
+}
+.pub-bar-block--open {
+  border-color: var(--border);
+  background: rgba(31, 50, 73, 0.45);
+}
+.pub-bar-toggle {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+.pub-bar-row-inner {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.pub-bar-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pub-bar-chevron {
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--text-muted);
+  width: 12px;
 }
 .pub-bar-name {
   font-size: 13px;
@@ -261,6 +297,71 @@ textarea { font-family: inherit; }
   color: var(--text-muted);
 }
 .pub-bar-rating { color: var(--accent); }
+
+.pub-reviews-panel {
+  padding: 0 4px 12px 22px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 12px;
+}
+.pub-reviews-loading,
+.pub-reviews-empty,
+.pub-reviews-err {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0 8px;
+}
+.pub-reviews-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.review-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  animation: review-in 0.35s ease both;
+}
+@keyframes review-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.review-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.review-week {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.review-stars {
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+.review-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.review-text--muted {
+  color: var(--text-muted);
+  font-style: italic;
+}
 
 /* ── Unvisited pills ───────────────────────────────────────────────────────── */
 .stats-unvisited {
@@ -606,10 +707,87 @@ textarea::placeholder { color: var(--text-muted); }
 /* ── Voting section ────────────────────────────────────────────────────────── */
 .vote-card { margin-bottom: 12px; }
 
+.vote-lede {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.vote-lede strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .vote-hint {
   font-size: 13px;
   color: var(--text-muted);
   margin-bottom: 16px;
+}
+
+.vote-undo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.vote-undo-btn {
+  font-size: 12px;
+  padding: 6px 14px;
+}
+.vote-undo-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 140px;
+}
+
+.vote-how {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.vote-how summary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vote-how summary::-webkit-details-marker { display: none; }
+.vote-how summary::before {
+  content: '▸';
+  font-size: 10px;
+  color: var(--accent);
+  transition: transform 0.15s;
+}
+.vote-how[open] summary::before {
+  transform: rotate(90deg);
+}
+.vote-how-body {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.vote-how-body p + p {
+  margin-top: 10px;
+}
+.vote-how-body strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.vote-how-admin {
+  padding-top: 8px;
+  margin-top: 8px !important;
+  border-top: 1px dashed var(--border);
 }
 
 .vote-list {
