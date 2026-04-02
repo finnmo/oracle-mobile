@@ -28,11 +28,13 @@ export interface StatusResponse {
   state: AppState;
   round: Round;
   ratings: RatingStats | null;
+  userRated?: boolean;
 }
 
 export interface HistoryRound {
   weekKey: string;
   announceAtUtc: string;
+  pubId: string | null;
   pubName: string | null;
   pubAddress: string | null;
   average: number | null;

@@ -1,6 +1,7 @@
 import { Env, AppState } from '../types';
 import { json } from '../response';
 import { getNextRoundTimings } from '../timeUtils';
+import { sha256 } from '../auth';
 
 export type StatusPayload = {
   serverNowUtc: string;
@@ -125,6 +126,26 @@ export async function buildStatus(env: Env): Promise<StatusPayload> {
   return { serverNowUtc: nowIso, state, round: roundPayload, ratings };
 }
 
-export async function handleStatus(_req: Request, env: Env): Promise<Response> {
-  return json(await buildStatus(env));
+export async function handleStatus(req: Request, env: Env): Promise<Response> {
+  const status = await buildStatus(env);
+
+  const url = new URL(req.url);
+  const deviceId = url.searchParams.get('deviceId');
+
+  let userRated: boolean | undefined;
+  if (
+    deviceId &&
+    status.round.id &&
+    (status.state === 'rating_open' || status.state === 'rating_closed')
+  ) {
+    const deviceHash = await sha256(deviceId);
+    const row = await env.DB.prepare(
+      'SELECT 1 FROM ratings WHERE roundId = ? AND deviceHash = ?'
+    )
+      .bind(status.round.id, deviceHash)
+      .first();
+    userRated = row != null;
+  }
+
+  return json({ ...status, userRated });
 }

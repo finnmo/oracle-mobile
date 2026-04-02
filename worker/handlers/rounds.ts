@@ -4,6 +4,7 @@ import { json } from '../response';
 interface HistoryRow {
   weekKey: string;
   announceAtUtc: string;
+  pubId: string | null;
   pubName: string | null;
   pubAddress: string | null;
   status: string;
@@ -17,6 +18,7 @@ export async function handleRounds(_req: Request, env: Env): Promise<Response> {
       r.weekKey,
       r.announceAtUtc,
       r.status,
+      p.id      AS pubId,
       p.name    AS pubName,
       p.address AS pubAddress,
       AVG(rt.score) AS avg_score,
@@ -33,6 +35,7 @@ export async function handleRounds(_req: Request, env: Env): Promise<Response> {
   const rounds = result.results.map((row) => ({
     weekKey: row.weekKey,
     announceAtUtc: row.announceAtUtc,
+    pubId: row.pubId ?? null,
     pubName: row.pubName,
     pubAddress: row.pubAddress,
     average: row.avg_score != null ? Math.round(row.avg_score * 10) / 10 : null,

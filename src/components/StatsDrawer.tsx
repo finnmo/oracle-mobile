@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
-import { StatsResponse, PubStat, PubReview } from '../types';
-import { fetchStats, fetchPubReviews } from '../api';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { StatsResponse, PubStat } from '../types';
+import { fetchStats } from '../api';
+import PubReviewsList from './PubReviewsList';
 
 interface Props {
   open: boolean;
@@ -12,6 +13,9 @@ export default function StatsDrawer({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const hasFetched = useRef(false);
+  const drawerRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!open || hasFetched.current) return;
@@ -23,14 +27,51 @@ export default function StatsDrawer({ open, onClose }: Props) {
       .finally(() => setLoading(false));
   }, [open]);
 
+  // Store the element that opened the drawer so we can restore focus on close
+  useEffect(() => {
+    if (open) {
+      triggerRef.current = document.activeElement as HTMLElement;
+      requestAnimationFrame(() => closeRef.current?.focus());
+    } else if (triggerRef.current) {
+      triggerRef.current.focus();
+      triggerRef.current = null;
+    }
+  }, [open]);
+
+  // Escape to close + focus trap
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      if (e.key !== 'Tab' || !drawerRef.current) return;
+
+      const focusable = drawerRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    },
+    [onClose]
+  );
+
   useEffect(() => {
     if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, handleKeyDown]);
 
   return (
     <>
@@ -40,10 +81,16 @@ export default function StatsDrawer({ open, onClose }: Props) {
         aria-hidden
       />
 
-      <aside className={`stats-drawer ${open ? 'open' : ''}`} aria-label="Stats">
+      <aside
+        ref={drawerRef}
+        className={`stats-drawer ${open ? 'open' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stats-title"
+      >
         <div className="drawer-header">
-          <h2 className="drawer-title">Stats</h2>
-          <button className="drawer-close" onClick={onClose} aria-label="Close">
+          <h2 className="drawer-title" id="stats-title">Stats</h2>
+          <button ref={closeRef} className="drawer-close" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
@@ -172,73 +219,3 @@ function PubBarExpandable({ pub, maxVisits }: { pub: PubStat; maxVisits: number 
   );
 }
 
-function PubReviewsList({ pubId }: { pubId: string }) {
-  const [reviews, setReviews] = useState<PubReview[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setErr(null);
-    fetchPubReviews(pubId)
-      .then((r) => {
-        if (!cancelled) setReviews(r.reviews);
-      })
-      .catch((e) => {
-        if (!cancelled) setErr(e.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [pubId]);
-
-  if (loading) {
-    return <div className="pub-reviews-loading">Loading reviews…</div>;
-  }
-  if (err) {
-    return <p className="inline-error pub-reviews-err">{err}</p>;
-  }
-  if (!reviews || reviews.length === 0) {
-    return <p className="pub-reviews-empty">No ratings recorded yet for this pub.</p>;
-  }
-
-  return (
-    <ul className="pub-reviews-list">
-      {reviews.map((rev, i) => (
-        <li
-          key={`${rev.createdAtUtc}-${i}`}
-          className="review-card"
-          style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
-        >
-          <div className="review-card-top">
-            <span className="review-week">{formatWeekLabel(rev.weekKey)}</span>
-            <span className="review-stars" aria-label={`${rev.score} out of 5`}>
-              {'★'.repeat(rev.score)}
-              {'☆'.repeat(5 - rev.score)}
-            </span>
-          </div>
-          {rev.comment && rev.comment.trim() ? (
-            <p className="review-text">{rev.comment}</p>
-          ) : (
-            <p className="review-text review-text--muted">No comment</p>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function formatWeekLabel(weekKey: string): string {
-  const [y, m, d] = weekKey.split('-').map(Number);
-  if (!y || !m || !d) return weekKey;
-  const date = new Date(y, m - 1, d);
-  return date.toLocaleDateString('en-AU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}

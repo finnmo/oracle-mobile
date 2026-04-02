@@ -13,22 +13,40 @@
     "db:seed": "wrangler d1 execute oracle-db --local --file=seed.sql",
     "db:init:remote": "wrangler d1 execute oracle-db --remote --file=schema.sql",
     "db:seed:remote": "wrangler d1 execute oracle-db --remote --file=seed.sql",
-    "icons": "node scripts/generate-icons.js"
+    "icons": "node scripts/generate-icons.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --max-warnings 20",
+    "lint:fix": "eslint . --fix --max-warnings 20",
+    "prepare": "husky"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --max-warnings 20"
+    ]
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240718.0",
+    "@eslint/js": "^9.39.4",
     "@types/canvas-confetti": "^1.9.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "sharp": "^0.34.5",
     "typescript": "^5.5.3",
+    "typescript-eslint": "^8.58.0",
     "vite": "^5.3.4",
+    "vitest": "^3.2.4",
     "wrangler": "^4.68.0"
   }
 }
