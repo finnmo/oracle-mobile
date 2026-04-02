@@ -4,6 +4,7 @@ import { StatusResponse } from './types';
 import { fetchStatus } from './api';
 import CountdownTimer from './components/CountdownTimer';
 import PubCard from './components/PubCard';
+import SlotReveal from './components/SlotReveal';
 import RatingSection from './components/RatingSection';
 import HistorySection from './components/HistorySection';
 import StatsDrawer from './components/StatsDrawer';
@@ -41,9 +42,11 @@ function MainApp() {
   const [loading, setLoading]   = useState(true);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pubNames, setPubNames] = useState<string[]>([]);
+  const [revealing, setRevealing] = useState(false);
 
-  // Confetti: fire once when state transitions to 'announced'
   const confettiFiredRef = useRef(false);
+  const lastRoundIdRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -115,18 +118,41 @@ function MainApp() {
     };
   }, [load]);
 
-  // Fire confetti when pub is revealed
+  // Fetch active pub names once for the slot reveal animation
   useEffect(() => {
-    if (status?.state === 'announced' && !confettiFiredRef.current) {
-      confettiFiredRef.current = true;
-      confetti({
-        particleCount: 120,
-        spread: 80,
-        origin: { y: 0.4 },
-        colors: ['#f59e0b', '#fcd34d', '#fbbf24', '#e8f0f8', '#7d9ab5'],
-      });
+    fetch('/api/pubs')
+      .then((r) => r.json())
+      .then((d: { pubs: { name: string }[] }) => setPubNames(d.pubs.map((p) => p.name)))
+      .catch(() => {});
+  }, []);
+
+  // Reset confetti flag when round changes
+  useEffect(() => {
+    const roundId = status?.round?.id ?? null;
+    if (roundId && roundId !== lastRoundIdRef.current) {
+      lastRoundIdRef.current = roundId;
+      confettiFiredRef.current = false;
+      setRevealing(false);
     }
-  }, [status?.state]);
+  }, [status?.round?.id]);
+
+  // Trigger slot reveal when state transitions to 'announced'
+  useEffect(() => {
+    if (status?.state === 'announced' && !confettiFiredRef.current && pubNames.length > 1) {
+      setRevealing(true);
+    }
+  }, [status?.state, pubNames.length]);
+
+  const handleRevealComplete = useCallback(() => {
+    setRevealing(false);
+    confettiFiredRef.current = true;
+    confetti({
+      particleCount: 120,
+      spread: 80,
+      origin: { y: 0.4 },
+      colors: ['#f59e0b', '#fcd34d', '#fbbf24', '#e8f0f8', '#7d9ab5'],
+    });
+  }, []);
 
   return (
     <div className="app">
@@ -164,7 +190,15 @@ function MainApp() {
           </div>
         )}
 
-        {status && <StatusView status={status} onRefresh={load} />}
+        {status && (
+          <StatusView
+            status={status}
+            onRefresh={load}
+            revealing={revealing}
+            pubNames={pubNames}
+            onRevealComplete={handleRevealComplete}
+          />
+        )}
       </main>
     </div>
   );
@@ -172,7 +206,15 @@ function MainApp() {
 
 // ── Status view ───────────────────────────────────────────────────────────────
 
-function StatusView({ status, onRefresh }: { status: StatusResponse; onRefresh: () => void }) {
+interface StatusViewProps {
+  status: StatusResponse;
+  onRefresh: () => void;
+  revealing: boolean;
+  pubNames: string[];
+  onRevealComplete: () => void;
+}
+
+function StatusView({ status, onRefresh, revealing, pubNames, onRevealComplete }: StatusViewProps) {
   const { state, round, ratings, serverNowUtc } = status;
 
   return (
@@ -190,7 +232,15 @@ function StatusView({ status, onRefresh }: { status: StatusResponse; onRefresh: 
 
       {state === 'announced' && round.pub && (
         <>
-          <PubCard pub={round.pub} showBadge />
+          {revealing ? (
+            <SlotReveal
+              finalPub={round.pub}
+              allPubNames={pubNames}
+              onComplete={onRevealComplete}
+            />
+          ) : (
+            <PubCard pub={round.pub} showBadge />
+          )}
           <CountdownTimer
             targetUtc={round.meetAtUtc}
             serverNowUtc={serverNowUtc}
@@ -210,6 +260,7 @@ function StatusView({ status, onRefresh }: { status: StatusResponse; onRefresh: 
             roundId={round.id}
             ratings={ratings}
             onRated={onRefresh}
+            userRated={status.userRated}
           />
         </>
       )}

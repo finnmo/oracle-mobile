@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { BallotPub, VotesResponse } from '../types';
 import { fetchVotes, castVote, castVeto, clearVote, getOrCreateDeviceId } from '../api';
 
@@ -6,10 +6,11 @@ export default function VotingSection() {
   const [data, setData]       = useState<VotesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState<string | null>(null);
-  const [voting, setVoting]   = useState<string | null>(null); // pubId being voted
+  const [voting, setVoting]   = useState<string | null>(null);
   const [vetoing, setVetoing] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const [vetoTarget, setVetoTarget] = useState<BallotPub | null>(null);
 
   const deviceId = getOrCreateDeviceId();
 
@@ -59,18 +60,18 @@ export default function VotingSection() {
     }
   };
 
-  const handleVeto = async (pub: BallotPub) => {
-    if (vetoing || data?.userVetoUsed) return;
-    if (!confirm(`Veto "${pub.name}"? This excludes it from the random pick this week. You only get one veto per month.`)) return;
+  const handleVetoConfirmed = async () => {
+    if (!vetoTarget || vetoing || data?.userVetoUsed) return;
     setVetoing(true);
     setActionErr(null);
     try {
-      await castVeto(pub.id, deviceId);
+      await castVeto(vetoTarget.id, deviceId);
       await load();
     } catch (e) {
       setActionErr(e instanceof Error ? e.message : 'Veto failed');
     } finally {
       setVetoing(false);
+      setVetoTarget(null);
     }
   };
 
@@ -123,7 +124,7 @@ export default function VotingSection() {
         </div>
       )}
 
-      <div className="vote-list">
+      <div className="vote-list" role="list">
         {data.pubs.map(pub => {
           const isMyVote  = data.userVote === pub.id;
           const isVetoed  = pub.vetoed;
@@ -133,13 +134,15 @@ export default function VotingSection() {
             <div
               key={pub.id}
               className={`vote-row ${isVetoed ? 'vote-row--vetoed' : ''} ${isMyVote ? 'vote-row--mine' : ''}`}
+              role="listitem"
+              aria-label={`${pub.name}, ${pub.votes} vote${pub.votes !== 1 ? 's' : ''}${isVetoed ? ', vetoed' : ''}`}
             >
               <div className="vote-row-info">
                 <span className="vote-pub-name">
                   {pub.name}
                   {isVetoed && <span className="veto-badge">vetoed</span>}
                 </span>
-                <div className="vote-bar-track">
+                <div className="vote-bar-track" role="progressbar" aria-valuenow={pub.votes} aria-valuemin={0} aria-valuemax={maxVotes}>
                   <div
                     className="vote-bar-fill"
                     style={{ width: `${(pub.votes / maxVotes) * 100}%` }}
@@ -160,7 +163,7 @@ export default function VotingSection() {
                 {!data.userVetoUsed && !isVetoed && (
                   <button
                     className="btn veto-btn btn-secondary"
-                    onClick={() => handleVeto(pub)}
+                    onClick={() => setVetoTarget(pub)}
                     disabled={vetoing}
                     title="Veto this pub — excludes it from the random pick this week (once per month)"
                   >
@@ -212,6 +215,94 @@ export default function VotingSection() {
         {!data.userVetoUsed && 'You have one veto this month (see above). '}
         Voting closes once this week&apos;s pub is announced.
       </p>
+
+      {vetoTarget && (
+        <VetoConfirmModal
+          pubName={vetoTarget.name}
+          onConfirm={handleVetoConfirmed}
+          onCancel={() => setVetoTarget(null)}
+          confirming={vetoing}
+        />
+      )}
+    </div>
+  );
+}
+
+function VetoConfirmModal({
+  pubName,
+  onConfirm,
+  onCancel,
+  confirming,
+}: {
+  pubName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  confirming: boolean;
+}) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCancel();
+        return;
+      }
+
+      if (e.key === 'Tab') {
+        const btns = [cancelRef.current, confirmRef.current].filter(Boolean) as HTMLElement[];
+        if (btns.length < 2) return;
+        if (e.shiftKey && document.activeElement === btns[0]) {
+          e.preventDefault();
+          btns[btns.length - 1].focus();
+        } else if (!e.shiftKey && document.activeElement === btns[btns.length - 1]) {
+          e.preventDefault();
+          btns[0].focus();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onCancel]);
+
+  return (
+    <div className="veto-modal-backdrop" onClick={onCancel}>
+      <div
+        className="veto-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-describedby="veto-modal-msg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="veto-modal-title">Confirm veto</h3>
+        <p className="veto-modal-message" id="veto-modal-msg">
+          Veto &ldquo;{pubName}&rdquo;? This excludes it from the random pick this week.
+          You only get one veto per month.
+        </p>
+        <div className="veto-modal-actions">
+          <button
+            ref={cancelRef}
+            className="btn btn-secondary"
+            onClick={onCancel}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            ref={confirmRef}
+            className="btn btn-primary"
+            onClick={onConfirm}
+            disabled={confirming}
+            type="button"
+          >
+            {confirming ? 'Vetoing…' : 'Veto'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -38,7 +38,7 @@ export async function handleEvents(_req: Request, env: Env): Promise<Response> {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://oracle.finn-morris.com',
     },
   });
 }

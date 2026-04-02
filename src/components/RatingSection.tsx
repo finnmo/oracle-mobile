@@ -6,14 +6,15 @@ interface Props {
   roundId: string;
   ratings: RatingStats | null;
   onRated: () => void;
+  userRated?: boolean;
 }
 
-export default function RatingSection({ roundId, ratings, onRated }: Props) {
+export default function RatingSection({ roundId, ratings, onRated, userRated }: Props) {
   const [selected, setSelected] = useState<number | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(userRated ?? false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async () => {

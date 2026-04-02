@@ -12,7 +12,8 @@ const BASE = '/api';
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export async function fetchStatus(): Promise<StatusResponse> {
-  const res = await fetch(`${BASE}/status`);
+  const deviceId = getOrCreateDeviceId();
+  const res = await fetch(`${BASE}/status?deviceId=${encodeURIComponent(deviceId)}`);
   if (!res.ok) throw new Error(`Status fetch failed: ${res.status}`);
   return res.json() as Promise<StatusResponse>;
 }
