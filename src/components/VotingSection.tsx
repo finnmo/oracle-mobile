@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BallotPub, VotesResponse } from '../types';
-import { fetchVotes, castVote, castVeto, getOrCreateDeviceId } from '../api';
+import { fetchVotes, castVote, castVeto, clearVote, getOrCreateDeviceId } from '../api';
 
 export default function VotingSection() {
   const [data, setData]       = useState<VotesResponse | null>(null);
@@ -8,6 +8,7 @@ export default function VotingSection() {
   const [err, setErr]         = useState<string | null>(null);
   const [voting, setVoting]   = useState<string | null>(null); // pubId being voted
   const [vetoing, setVetoing] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
 
   const deviceId = getOrCreateDeviceId();
@@ -41,6 +42,20 @@ export default function VotingSection() {
       setActionErr(e instanceof Error ? e.message : 'Vote failed');
     } finally {
       setVoting(null);
+    }
+  };
+
+  const handleClearVote = async () => {
+    if (clearing || !data?.userVote) return;
+    setClearing(true);
+    setActionErr(null);
+    try {
+      await clearVote(deviceId);
+      await load();
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : 'Could not remove vote');
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -84,11 +99,29 @@ export default function VotingSection() {
   return (
     <div className="card vote-card">
       <div className="card-label">This week's vote</div>
+      <p className="vote-lede">
+        <strong>One pub per person per week</strong> on this phone — tracked with a random id stored in your browser
+        (no account). Change pub anytime, or use <strong>Undo vote</strong> to remove yours. Shared Wi‑Fi is fine.
+      </p>
       <p className="vote-hint">
         {data.totalVotes === 0
           ? 'No votes yet — be the first!'
-          : `${data.totalVotes} vote${data.totalVotes !== 1 ? 's' : ''} cast${data.userVote ? ' · your vote is highlighted' : ''}`}
+          : `${data.totalVotes} vote${data.totalVotes !== 1 ? 's' : ''} cast${data.userVote ? ' · your choice is highlighted' : ''}`}
       </p>
+
+      {data.userVote && (
+        <div className="vote-undo-row">
+          <button
+            type="button"
+            className="btn btn-secondary vote-undo-btn"
+            onClick={handleClearVote}
+            disabled={clearing}
+          >
+            {clearing ? '…' : 'Undo vote'}
+          </button>
+          <span className="vote-undo-hint">Removes your vote only — not someone else&apos;s</span>
+        </div>
+      )}
 
       <div className="vote-list">
         {data.pubs.map(pub => {
@@ -149,9 +182,35 @@ export default function VotingSection() {
 
       {actionErr && <p className="inline-error" style={{ marginTop: 8 }}>{actionErr}</p>}
 
+      <details className="vote-how">
+        <summary>How votes, vetoes &amp; random picks work</summary>
+        <div className="vote-how-body">
+          <p>
+            <strong>Your vote</strong> is tied to this browser only — use <strong>Undo vote</strong> to delete it
+            while voting is open. You can&apos;t change someone else&apos;s vote.
+          </p>
+          <p>
+            <strong>If anyone has voted:</strong> the scheduled pick (or automatic picker) chooses the pub with the{' '}
+            <strong>highest vote count</strong>. Ties are broken in favour of the pub that reached that count first.
+          </p>
+          <p>
+            <strong>If there are zero votes:</strong> Oracle picks a random active pub, skipping pubs{' '}
+            <strong>vetoed this week</strong> and usually the <strong>last three</strong> pubs we already went to
+            (with fallbacks if that leaves nobody).
+          </p>
+          <p>
+            <strong>Vetoes</strong> only apply when the choice would otherwise be random — they remove a pub from that
+            pool for this week. You get <strong>one veto per calendar month</strong>.
+          </p>
+          <p className="vote-how-admin">
+            <strong>Admin</strong> can always announce a specific pub for the week, which overrides the rules above.
+          </p>
+        </div>
+      </details>
+
       <p className="vote-footnote text-muted">
-        Votes influence the random pick — top voted pub wins unless admin overrides.
-        {!data.userVetoUsed && ' You have one veto remaining this month.'}
+        {!data.userVetoUsed && 'You have one veto this month (see above). '}
+        Voting closes once this week&apos;s pub is announced.
       </p>
     </div>
   );

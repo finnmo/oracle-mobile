@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { StatsResponse, PubStat } from '../types';
-import { fetchStats } from '../api';
+import { StatsResponse, PubStat, PubReview } from '../types';
+import { fetchStats, fetchPubReviews } from '../api';
 
 interface Props {
   open: boolean;
@@ -13,7 +13,6 @@ export default function StatsDrawer({ open, onClose }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const hasFetched = useRef(false);
 
-  // Fetch stats the first time the drawer opens
   useEffect(() => {
     if (!open || hasFetched.current) return;
     hasFetched.current = true;
@@ -24,24 +23,23 @@ export default function StatsDrawer({ open, onClose }: Props) {
       .finally(() => setLoading(false));
   }, [open]);
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className={`drawer-backdrop ${open ? 'open' : ''}`}
         onClick={onClose}
         aria-hidden
       />
 
-      {/* Drawer panel */}
       <aside className={`stats-drawer ${open ? 'open' : ''}`} aria-label="Stats">
         <div className="drawer-header">
           <h2 className="drawer-title">Stats</h2>
@@ -66,8 +64,6 @@ export default function StatsDrawer({ open, onClose }: Props) {
   );
 }
 
-// ─── Stats content ────────────────────────────────────────────────────────────
-
 function StatsContent({ data }: { data: StatsResponse }) {
   const { pubs, totalVisits, totalRatings, bestPub } = data;
   const maxVisits = Math.max(...pubs.map((p) => p.visits), 1);
@@ -76,7 +72,6 @@ function StatsContent({ data }: { data: StatsResponse }) {
 
   return (
     <>
-      {/* Summary row */}
       <div className="stats-summary">
         <SummaryStat label="Total visits" value={totalVisits} />
         <SummaryStat label="Total ratings" value={totalRatings} />
@@ -91,11 +86,11 @@ function StatsContent({ data }: { data: StatsResponse }) {
         </div>
       )}
 
-      {/* Bar chart */}
       <div className="stats-chart-title">Visits per pub</div>
+      <p className="stats-hint">Tap a pub to read reviews</p>
       <div className="stats-chart">
         {visited.map((pub) => (
-          <PubBar key={pub.id} pub={pub} maxVisits={maxVisits} />
+          <PubBarExpandable key={pub.id} pub={pub} maxVisits={maxVisits} />
         ))}
         {visited.length === 0 && (
           <p className="text-muted" style={{ fontSize: 14 }}>No closed rounds yet.</p>
@@ -125,7 +120,8 @@ function SummaryStat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function PubBar({ pub, maxVisits }: { pub: PubStat; maxVisits: number }) {
+function PubBarExpandable({ pub, maxVisits }: { pub: PubStat; maxVisits: number }) {
+  const [open, setOpen] = useState(false);
   const pct = Math.max((pub.visits / maxVisits) * 100, 4);
   const ratingColor = pub.avgScore == null
     ? 'var(--surface-2)'
@@ -136,22 +132,113 @@ function PubBar({ pub, maxVisits }: { pub: PubStat; maxVisits: number }) {
     : '#92400e';
 
   return (
-    <div className="pub-bar-row">
-      <div className="pub-bar-name" title={pub.name}>{pub.name}</div>
-      <div className="pub-bar-track">
-        <div
-          className="pub-bar-fill"
-          style={{ width: `${pct}%`, background: ratingColor }}
-        />
-      </div>
-      <div className="pub-bar-meta">
-        <span className="pub-bar-visits">
-          {pub.visits} {pub.visits === 1 ? 'visit' : 'visits'}
-        </span>
-        {pub.avgScore != null && (
-          <span className="pub-bar-rating">{pub.avgScore.toFixed(1)} ★</span>
-        )}
-      </div>
+    <div className={`pub-bar-block ${open ? 'pub-bar-block--open' : ''}`}>
+      <button
+        type="button"
+        className="pub-bar-toggle"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={`reviews-${pub.id}`}
+        id={`pub-head-${pub.id}`}
+      >
+        <div className="pub-bar-row-inner">
+          <div className="pub-bar-name-row">
+            <span className="pub-bar-chevron" aria-hidden>{open ? '▼' : '▶'}</span>
+            <span className="pub-bar-name" title={pub.name}>{pub.name}</span>
+          </div>
+          <div className="pub-bar-track">
+            <div
+              className="pub-bar-fill"
+              style={{ width: `${pct}%`, background: ratingColor }}
+            />
+          </div>
+          <div className="pub-bar-meta">
+            <span className="pub-bar-visits">
+              {pub.visits} {pub.visits === 1 ? 'visit' : 'visits'}
+            </span>
+            {pub.avgScore != null && (
+              <span className="pub-bar-rating">{pub.avgScore.toFixed(1)} ★</span>
+            )}
+          </div>
+        </div>
+      </button>
+
+      {open && (
+        <div className="pub-reviews-panel" id={`reviews-${pub.id}`} role="region" aria-labelledby={`pub-head-${pub.id}`}>
+          <PubReviewsList pubId={pub.id} />
+        </div>
+      )}
     </div>
   );
+}
+
+function PubReviewsList({ pubId }: { pubId: string }) {
+  const [reviews, setReviews] = useState<PubReview[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    fetchPubReviews(pubId)
+      .then((r) => {
+        if (!cancelled) setReviews(r.reviews);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pubId]);
+
+  if (loading) {
+    return <div className="pub-reviews-loading">Loading reviews…</div>;
+  }
+  if (err) {
+    return <p className="inline-error pub-reviews-err">{err}</p>;
+  }
+  if (!reviews || reviews.length === 0) {
+    return <p className="pub-reviews-empty">No ratings recorded yet for this pub.</p>;
+  }
+
+  return (
+    <ul className="pub-reviews-list">
+      {reviews.map((rev, i) => (
+        <li
+          key={`${rev.createdAtUtc}-${i}`}
+          className="review-card"
+          style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
+        >
+          <div className="review-card-top">
+            <span className="review-week">{formatWeekLabel(rev.weekKey)}</span>
+            <span className="review-stars" aria-label={`${rev.score} out of 5`}>
+              {'★'.repeat(rev.score)}
+              {'☆'.repeat(5 - rev.score)}
+            </span>
+          </div>
+          {rev.comment && rev.comment.trim() ? (
+            <p className="review-text">{rev.comment}</p>
+          ) : (
+            <p className="review-text review-text--muted">No comment</p>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function formatWeekLabel(weekKey: string): string {
+  const [y, m, d] = weekKey.split('-').map(Number);
+  if (!y || !m || !d) return weekKey;
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }

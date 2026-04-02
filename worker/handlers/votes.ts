@@ -3,9 +3,11 @@ import { json, error } from '../response';
 import { sha256 } from '../auth';
 import { getVoteAndRoundAnchorPerthYmd } from '../timeUtils';
 
+/** One vote per device per week (hashed). No IP limits — shared Wi‑Fi is normal. */
 interface VoteBody {
-  pubId: string;
   deviceId: string;
+  pubId?: string;
+  clear?: boolean;
 }
 
 interface VoteRow {
@@ -32,13 +34,9 @@ async function getVotes(request: Request, env: Env): Promise<Response> {
   const nowUtc = new Date();
   const weekKey = getVoteAndRoundAnchorPerthYmd(nowUtc);
 
-  // Identify caller for personalisation (optional — no error if missing)
-  const url      = new URL(request.url);
+  const url = new URL(request.url);
   const deviceId = url.searchParams.get('deviceId');
-  const ip       = request.headers.get('CF-Connecting-IP') ?? request.headers.get('X-Forwarded-For') ?? '';
-  const deviceHash = deviceId
-    ? await sha256(deviceId)
-    : ip ? await sha256(ip) : null;
+  const deviceHash = deviceId ? await sha256(deviceId) : null;
 
   // Vote counts per pub
   const voteCounts = await env.DB.prepare(`
@@ -109,19 +107,12 @@ async function castVote(request: Request, env: Env): Promise<Response> {
     return error('Invalid JSON', 400);
   }
 
-  const { pubId, deviceId } = body;
-  if (!pubId)    return error('pubId is required', 400);
+  const { pubId, deviceId, clear } = body;
   if (!deviceId) return error('deviceId is required', 400);
-
-  const pub = await env.DB.prepare(
-    'SELECT id FROM pubs WHERE id = ? AND active = 1'
-  ).bind(pubId).first<{ id: string }>();
-  if (!pub) return error('Pub not found or inactive', 404);
 
   const nowUtc = new Date();
   const weekKey = getVoteAndRoundAnchorPerthYmd(nowUtc);
 
-  // Voting closes once the pub is announced
   const round = await env.DB.prepare(
     'SELECT status FROM rounds WHERE weekKey = ?'
   ).bind(weekKey).first<{ status: string }>();
@@ -131,12 +122,32 @@ async function castVote(request: Request, env: Env): Promise<Response> {
 
   const deviceHash = await sha256(deviceId);
 
-  // Upsert — changing your vote is allowed
+  if (clear) {
+    const del = await env.DB.prepare(
+      'DELETE FROM votes WHERE weekKey = ? AND deviceHash = ?'
+    )
+      .bind(weekKey, deviceHash)
+      .run();
+    if (del.meta.changes === 0) {
+      return error('No vote to remove for this device', 404);
+    }
+    return json({ ok: true, weekKey, cleared: true });
+  }
+
+  if (!pubId) return error('pubId is required unless clear is true', 400);
+
+  const pub = await env.DB.prepare(
+    'SELECT id FROM pubs WHERE id = ? AND active = 1'
+  ).bind(pubId).first<{ id: string }>();
+  if (!pub) return error('Pub not found or inactive', 404);
+
   await env.DB.prepare(`
     INSERT INTO votes (id, weekKey, pubId, deviceHash)
     VALUES (?, ?, ?, ?)
     ON CONFLICT(weekKey, deviceHash) DO UPDATE SET pubId = excluded.pubId
-  `).bind(crypto.randomUUID(), weekKey, pubId, deviceHash).run();
+  `)
+    .bind(crypto.randomUUID(), weekKey, pubId, deviceHash)
+    .run();
 
   return json({ ok: true, weekKey, pubId });
 }
