@@ -100,10 +100,6 @@ export default function VotingSection() {
   return (
     <div className="card vote-card">
       <div className="card-label">This week's vote</div>
-      <p className="vote-lede">
-        <strong>One pub per person per week</strong> on this phone — tracked with a random id stored in your browser
-        (no account). Change pub anytime, or use <strong>Undo vote</strong> to remove yours. Shared Wi‑Fi is fine.
-      </p>
       <p className="vote-hint">
         {data.totalVotes === 0
           ? 'No votes yet — be the first!'
