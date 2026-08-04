@@ -68,6 +68,8 @@ async function queryRandom(env: Env, excluded: string[]): Promise<string | null>
   }
   query += ' ORDER BY RANDOM() LIMIT 1';
 
-  const pub = await env.DB.prepare(query).bind(...params).first<{ id: string }>();
-  return pub?.id ?? null;
+  // D1 throws if bind() is called with zero parameters
+  const stmt = env.DB.prepare(query);
+  const pub = (params.length > 0 ? stmt.bind(...params) : stmt).first<{ id: string }>();
+  return (await pub)?.id ?? null;
 }

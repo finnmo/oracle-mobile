@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import confetti from 'canvas-confetti';
 import { StatusResponse } from './types';
 import { fetchStatus } from './api';
+import { fireAnnounceCelebration } from './celebrate';
 import CountdownTimer from './components/CountdownTimer';
 import PubCard from './components/PubCard';
 import SlotReveal from './components/SlotReveal';
@@ -48,8 +48,10 @@ function MainApp() {
   const [revealing, setRevealing] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
 
-  const confettiFiredRef = useRef(false);
-  const lastRoundIdRef = useRef<string | null>(null);
+  const revealDoneRef = useRef(false);
+  const lastRevealKeyRef = useRef<string | null>(null);
+  const [pubsReady, setPubsReady] = useState(false);
+  const [justRevealed, setJustRevealed] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -125,47 +127,53 @@ function MainApp() {
   useEffect(() => {
     fetch('/api/pubs')
       .then((r) => r.json())
-      .then((d: { pubs: { name: string }[] }) => setPubNames(d.pubs.map((p) => p.name)))
-      .catch(() => {});
+      .then((d: { pubs: { name: string }[] }) => {
+        setPubNames(d.pubs.map((p) => p.name));
+        setPubsReady(true);
+      })
+      .catch(() => setPubsReady(true));
   }, []);
 
-
-  // Reset confetti flag when round changes
+  // Reset reveal when round or chosen pub changes (e.g. admin re-announce)
   useEffect(() => {
     const roundId = status?.round?.id ?? null;
-    if (roundId && roundId !== lastRoundIdRef.current) {
-      lastRoundIdRef.current = roundId;
-      confettiFiredRef.current = false;
-      setRevealing(false);
-    }
-  }, [status?.round?.id]);
+    const pubId = status?.round?.pub?.id ?? null;
+    const key = roundId && pubId ? `${roundId}:${pubId}` : null;
+    if (!key || key === lastRevealKeyRef.current) return;
 
-  // Trigger slot reveal (or instant confetti when only one name in the pool)
+    lastRevealKeyRef.current = key;
+    const seen = sessionStorage.getItem(`oracle_reveal_v2_${key}`) === '1';
+    revealDoneRef.current = seen;
+    setRevealing(false);
+    setJustRevealed(false);
+  }, [status?.round?.id, status?.round?.pub?.id]);
+
+  // Start the celebration once pubs are loaded (avoids skipping the slot when names arrive late)
   useEffect(() => {
-    if (status?.state !== 'announced' || confettiFiredRef.current) return;
+    if (status?.state !== 'announced' || !status.round.pub || !pubsReady || revealDoneRef.current) {
+      return;
+    }
     if (pubNames.length > 1) {
       setRevealing(true);
       return;
     }
-    confettiFiredRef.current = true;
-    confetti({
-      particleCount: 90,
-      spread: 70,
-      origin: { y: 0.4 },
-      colors: ['#1a4538', '#c4a574', '#6b5340', '#c5d4cb', '#0a1410'],
-    });
-  }, [status?.state, pubNames.length]);
+    // Degenerate pool — still celebrate
+    revealDoneRef.current = true;
+    const key = `${status.round.id}:${status.round.pub.id}`;
+    sessionStorage.setItem(`oracle_reveal_v2_${key}`, '1');
+    setJustRevealed(true);
+    fireAnnounceCelebration();
+  }, [status?.state, status?.round?.id, status?.round?.pub, pubsReady, pubNames.length]);
 
   const handleRevealComplete = useCallback(() => {
     setRevealing(false);
-    confettiFiredRef.current = true;
-    confetti({
-      particleCount: 120,
-      spread: 80,
-      origin: { y: 0.4 },
-      colors: ['#1a4538', '#c4a574', '#6b5340', '#c5d4cb', '#0a1410'],
-    });
-  }, []);
+    setJustRevealed(true);
+    revealDoneRef.current = true;
+    const roundId = status?.round?.id;
+    const pubId = status?.round?.pub?.id;
+    if (roundId && pubId) sessionStorage.setItem(`oracle_reveal_v2_${roundId}:${pubId}`, '1');
+    fireAnnounceCelebration();
+  }, [status?.round?.id, status?.round?.pub?.id]);
 
   return (
     <div className="app">
@@ -229,6 +237,7 @@ function MainApp() {
               status={status}
               onRefresh={load}
               revealing={revealing}
+              justRevealed={justRevealed}
               pubNames={pubNames}
               onRevealComplete={handleRevealComplete}
             />
@@ -255,11 +264,12 @@ interface StatusViewProps {
   status: StatusResponse;
   onRefresh: () => void;
   revealing: boolean;
+  justRevealed: boolean;
   pubNames: string[];
   onRevealComplete: () => void;
 }
 
-function StatusView({ status, onRefresh, revealing, pubNames, onRevealComplete }: StatusViewProps) {
+function StatusView({ status, onRefresh, revealing, justRevealed, pubNames, onRevealComplete }: StatusViewProps) {
   const { state, round, ratings, serverNowUtc } = status;
 
   return (
@@ -284,7 +294,7 @@ function StatusView({ status, onRefresh, revealing, pubNames, onRevealComplete }
               onComplete={onRevealComplete}
             />
           ) : (
-            <PubCard pub={round.pub} showBadge />
+            <PubCard pub={round.pub} showBadge celebrate={justRevealed} />
           )}
           <CountdownTimer
             targetUtc={round.meetAtUtc}

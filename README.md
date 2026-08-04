@@ -105,19 +105,17 @@ CF_ACCESS_TEAM_DOMAIN = "https://YOURTEAM.cloudflareaccess.com"
 Admin lives at **`/admin`** (not a hash route) so Access can protect it.
 
 1. **Zero Trust** → **Access** → **Applications** → add a **Self-hosted** app for `picker.example.com`.
-2. Protect only these paths (do **not** protect all of `/api` — that locks voting/status behind Access and breaks the public app):
+2. Protect **only the Admin UI** (do **not** put `/api/admin` behind Access — Access returns HTML redirects/challenges that break `fetch`, and Bearer tokens never reach the Worker):
    - `picker.example.com/admin`
    - `picker.example.com/admin/*`
-   - `picker.example.com/api/admin`
-   - `picker.example.com/api/admin/*`
 3. Enable **Google** as an identity provider.
 4. Policy: **Allow** when the user’s email is in your allowlist (and/or matches your Google Workspace domain).
 5. Copy the **Application Audience (AUD) Tag** and set `CF_ACCESS_AUD` via `wrangler secret put`.
 6. Set `CF_ACCESS_TEAM_DOMAIN` in `[vars]` as above, then `npm run deploy`.
 
-Public pages and APIs (`/`, `/api/status`, `/api/votes`, etc.) stay unprotected.
+Public pages and APIs (`/`, `/api/status`, `/api/votes`, etc.) stay unprotected. `/api/admin/*` is authenticated by the Worker (Access JWT cookie from `/admin` login, or `Authorization: Bearer`).
 
-**Login UX:** open `https://picker.example.com/admin` → Google via Access. The Admin page probes `/api/admin/pubs` using the Access session cookie. Bearer token login remains under “Use API token instead” for emergencies and local wrangler (Access vars unset → Bearer only).
+**Login UX:** open `https://picker.example.com/admin` → Google via Access. The Admin page probes `/api/admin/pubs` using the Access session cookie. Bearer token login remains under “Use API token instead” for emergencies and local wrangler.
 
 ---
 

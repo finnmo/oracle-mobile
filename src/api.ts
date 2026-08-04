@@ -119,6 +119,9 @@ export function clearAdminToken(): void {
   sessionStorage.removeItem('oracle_admin_token');
 }
 
+/** Production Workers URL — used to bypass Access when an API token is set. */
+const WORKERS_DEV_ADMIN = 'https://oracle.example-account.workers.dev/api/admin';
+
 async function adminFetch(path: string, options: RequestInit = {}): Promise<{ res: Response; data: unknown }> {
   const token = (getAdminToken() ?? '').replace(/[^\x20-\x7E]/g, '');
   const headers: Record<string, string> = {
@@ -130,22 +133,36 @@ async function adminFetch(path: string, options: RequestInit = {}): Promise<{ re
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(`/api/admin${path}`, {
+  // Access on the custom domain intercepts /api/admin/* before the Worker sees Bearer.
+  // Token login therefore goes to workers.dev (CORS allows this origin). Access-cookie
+  // sessions stay same-origin so CF_Authorization is sent.
+  const onCustomDomain =
+    typeof window !== 'undefined' && window.location.hostname === 'picker.example.com';
+  const useTokenBypass = Boolean(token) && onCustomDomain;
+  const url = `${useTokenBypass ? WORKERS_DEV_ADMIN : '/api/admin'}${path}`;
+
+  const res = await fetch(url, {
     ...options,
-    credentials: 'include',
+    credentials: useTokenBypass ? 'omit' : 'include',
+    redirect: 'manual',
     headers,
   });
+
+  // Access login redirect (same-origin) when session cookie is missing/expired
+  if (res.status >= 300 && res.status < 400) {
+    throw new Error('Access session missing — open /admin and sign in with Google, or use an API token');
+  }
 
   const text = await res.text();
   let data: unknown = {};
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
-    // Access sometimes returns HTML login/challenge instead of JSON
-    if (res.redirected || text.includes('cloudflareaccess') || text.includes('Sign in')) {
-      throw new Error('Access session missing on API — protect /api/admin/* in the same Access app, then retry');
+    if (text.includes('cloudflareaccess') || text.includes('Sign in') || text.includes('302 Found')) {
+      throw new Error('Access blocked this admin API call — protect only /admin (not /api/admin), or use an API token');
     }
-    throw new Error(`Admin API returned non-JSON (${res.status})`);
+    const snippet = text.replace(/\s+/g, ' ').slice(0, 80);
+    throw new Error(`Admin API returned non-JSON (${res.status})${snippet ? `: ${snippet}` : ''}`);
   }
 
   if (res.status === 401 || res.status === 403) {

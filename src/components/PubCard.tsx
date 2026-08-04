@@ -4,9 +4,11 @@ import { Pub } from '../types';
 interface Props {
   pub: Pub;
   showBadge?: boolean;
+  /** Entrance flourish right after the slot reveal lands. */
+  celebrate?: boolean;
 }
 
-export default function PubCard({ pub, showBadge = true }: Props) {
+export default function PubCard({ pub, showBadge = true, celebrate = false }: Props) {
   const [mapOpen, setMapOpen] = useState(false);
   const [shareNote, setShareNote] = useState<string | null>(null);
 
@@ -41,30 +43,20 @@ export default function PubCard({ pub, showBadge = true }: Props) {
     : null;
 
   return (
-    <div className="card pub-card">
+    <div className={`card pub-card${celebrate ? ' pub-card--celebrate' : ''}`}>
       {showBadge && <div className="card-label">Hey — we&apos;re going to</div>}
       <h2 className="pub-name">{pub.name}</h2>
       {pub.address && <p className="pub-address">{pub.address}</p>}
 
-      {mapSrc && (
+      {mapSrc && mapOpen && (
         <div className="pub-map-wrap">
-          {mapOpen && (
-            <iframe
-              src={mapSrc}
-              className="pub-map"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              title={`Map of ${pub.name}`}
-            />
-          )}
-          <button
-            type="button"
-            className="pub-map-toggle"
-            onClick={() => setMapOpen((o) => !o)}
-            aria-expanded={mapOpen}
-          >
-            {mapOpen ? 'Hide map' : 'Show map'}
-          </button>
+          <iframe
+            src={mapSrc}
+            className="pub-map"
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            title={`Map of ${pub.name}`}
+          />
         </div>
       )}
 
@@ -72,6 +64,16 @@ export default function PubCard({ pub, showBadge = true }: Props) {
         {pub.mapsUrl && (
           <button type="button" className="btn btn-primary" onClick={handleMaps}>
             Open in Maps
+          </button>
+        )}
+        {mapSrc && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setMapOpen((o) => !o)}
+            aria-expanded={mapOpen}
+          >
+            {mapOpen ? 'Hide map' : 'Show map'}
           </button>
         )}
         <button type="button" className="btn btn-secondary" onClick={handleShare}>

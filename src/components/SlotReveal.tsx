@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Pub } from '../types';
+import { BenchIcon } from './PubIcons';
 
 interface Props {
   finalPub: Pub;
@@ -7,9 +8,11 @@ interface Props {
   onComplete: () => void;
 }
 
+type Phase = 'intro' | 'spinning' | 'landed';
+
 export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props) {
+  const [phase, setPhase] = useState<Phase>('intro');
   const [displayName, setDisplayName] = useState('');
-  const [done, setDone] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishedRef = useRef(false);
@@ -19,33 +22,47 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
     finishedRef.current = true;
     if (timerRef.current) clearTimeout(timerRef.current);
     setDisplayName(finalPub.name);
-    setDone(true);
-    completeTimerRef.current = setTimeout(onComplete, 400);
+    setPhase('landed');
+    completeTimerRef.current = setTimeout(onComplete, 900);
   }, [finalPub.name, onComplete]);
 
+  // Intro beat, then spin
   useEffect(() => {
+    const t = setTimeout(() => setPhase('spinning'), 1100);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Name reel
+  useEffect(() => {
+    if (phase !== 'spinning') return;
+
     const names = [...allPubNames].sort(() => Math.random() - 0.5);
     if (!names.includes(finalPub.name)) names.push(finalPub.name);
+    // Guarantee final name isn't sitting near the start of the shuffle
+    const pool = names.filter((n) => n !== finalPub.name);
+    while (pool.length < 8) pool.push(...names);
+    const sequence = [...pool.slice(0, 14), finalPub.name];
 
     let idx = 0;
-    let delay = 70;
-    const totalDuration = 3000;
+    let delay = 55;
+    const totalDuration = 3400;
     const start = Date.now();
 
     function tick() {
       if (finishedRef.current) return;
       const elapsed = Date.now() - start;
 
-      if (elapsed >= totalDuration) {
+      if (elapsed >= totalDuration || idx >= sequence.length - 1) {
         finish();
         return;
       }
 
-      setDisplayName(names[idx % names.length]);
+      setDisplayName(sequence[idx % sequence.length]);
       idx++;
 
       const progress = elapsed / totalDuration;
-      delay = 70 + progress * progress * 260;
+      // ease out: fast blur → slow suspense
+      delay = 55 + progress * progress * 420;
       timerRef.current = setTimeout(tick, delay);
     }
 
@@ -53,31 +70,62 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [phase, finalPub, allPubNames, finish]);
+
+  useEffect(() => {
+    return () => {
       if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
     };
-  }, [finalPub, allPubNames, finish]);
+  }, []);
+
+  const skip = () => {
+    if (phase !== 'landed') finish();
+  };
 
   return (
     <div
-      className="card slot-reveal"
+      className={`announce-reveal announce-reveal--${phase}`}
       role="button"
       tabIndex={0}
-      aria-label={done ? finalPub.name : 'Revealing pub — tap to skip'}
-      onClick={() => { if (!done) finish(); }}
+      aria-label={phase === 'landed' ? finalPub.name : 'Revealing pub — tap to skip'}
+      aria-live="polite"
+      onClick={skip}
       onKeyDown={(e) => {
-        if (!done && (e.key === 'Enter' || e.key === ' ')) {
+        if (phase !== 'landed' && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
-          finish();
+          skip();
         }
       }}
     >
-      <div className="card-label">Hey — we&apos;re going to</div>
-      <div className="slot-reveal-window">
-        <h2 className={`pub-name slot-reveal-name ${done ? 'slot-reveal-name--final' : ''}`}>
-          {displayName}
-        </h2>
+      <div className="announce-reveal-glow" aria-hidden="true" />
+
+      <p className="announce-reveal-eyebrow">
+        {phase === 'intro' && 'The Oracle has spoken'}
+        {phase === 'spinning' && 'Choosing this week’s pub…'}
+        {phase === 'landed' && 'Hey — we’re going to'}
+      </p>
+
+      <div className="announce-reveal-reel" aria-hidden={phase === 'intro'}>
+        <div className="announce-reveal-mask">
+          {phase === 'intro' ? (
+            <BenchIcon className="announce-reveal-mark" />
+          ) : (
+            <h2
+              className={`announce-reveal-name ${phase === 'landed' ? 'announce-reveal-name--final' : ''}`}
+              key={phase === 'landed' ? 'final' : displayName}
+            >
+              {displayName || '…'}
+            </h2>
+          )}
+        </div>
       </div>
-      {!done && <p className="slot-skip-hint">Tap to skip</p>}
+
+      {phase === 'landed' && finalPub.address && (
+        <p className="announce-reveal-address">{finalPub.address}</p>
+      )}
+
+      {phase !== 'landed' && <p className="announce-reveal-skip">Tap to skip</p>}
     </div>
   );
 }
