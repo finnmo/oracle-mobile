@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ClockIcon } from './PubIcons';
 
 interface Props {
   targetUtc: string;
@@ -26,9 +27,23 @@ function getParts(targetMs: number, nowMs: number): Parts {
   return { days, hours, minutes, seconds, done: false };
 }
 
+function formatPerthWhen(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-AU', {
+      timeZone: 'Australia/Perth',
+      weekday: 'long',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(new Date(iso)) + ' Perth';
+  } catch {
+    return '';
+  }
+}
+
 export default function CountdownTimer({ targetUtc, serverNowUtc, label }: Props) {
-  // Compute the offset between server clock and local clock once on mount/prop change
   const offsetRef = useRef<number>(0);
+  const scheduleLine = formatPerthWhen(targetUtc);
   const [parts, setParts] = useState<Parts>(() => {
     const offset = new Date(serverNowUtc).getTime() - Date.now();
     return getParts(new Date(targetUtc).getTime(), Date.now() + offset);
@@ -40,12 +55,9 @@ export default function CountdownTimer({ targetUtc, serverNowUtc, label }: Props
 
   useEffect(() => {
     const targetMs = new Date(targetUtc).getTime();
-
     const tick = () => {
-      const nowMs = Date.now() + offsetRef.current;
-      setParts(getParts(targetMs, nowMs));
+      setParts(getParts(targetMs, Date.now() + offsetRef.current));
     };
-
     tick();
     const id = setInterval(tick, 1_000);
     return () => clearInterval(id);
@@ -53,43 +65,57 @@ export default function CountdownTimer({ targetUtc, serverNowUtc, label }: Props
 
   const pad = (n: number) => String(n).padStart(2, '0');
 
+  const lead =
+    label.toLowerCase().includes('meet') ? 'Meet in:'
+    : 'Announcing pub in:';
+
   if (parts.done) {
     return (
-      <div className="card">
-        <div className="card-label">{label}</div>
+      <div className="card card--countdown" aria-label={label}>
+        <div className="countdown-lead">
+          <ClockIcon className="countdown-clock" />
+          <span className="countdown-lead-text">{lead}</span>
+        </div>
         <p className="countdown-soon">Any moment now…</p>
+        {scheduleLine && <p className="countdown-when">{scheduleLine}</p>}
       </div>
     );
   }
 
+  const showDays = parts.days > 0;
+
   return (
-    <div className="card">
-      <div className="card-label">{label}</div>
-      <div className="countdown">
-        {parts.days > 0 && (
+    <div className="card card--countdown" aria-label={label}>
+      <div className="countdown-lead">
+        <ClockIcon className="countdown-clock" />
+        <span className="countdown-lead-text">{lead}</span>
+      </div>
+      <div className="countdown" aria-live="polite">
+        {showDays && (
           <>
             <div className="countdown-unit">
               <span className="countdown-value">{parts.days}</span>
               <span className="countdown-label">days</span>
             </div>
-            <span className="countdown-sep">:</span>
+            <span className="countdown-sep" aria-hidden />
           </>
         )}
         <div className="countdown-unit">
           <span className="countdown-value">{pad(parts.hours)}</span>
           <span className="countdown-label">hrs</span>
         </div>
-        <span className="countdown-sep">:</span>
+        <span className="countdown-sep" aria-hidden />
         <div className="countdown-unit">
           <span className="countdown-value">{pad(parts.minutes)}</span>
           <span className="countdown-label">min</span>
         </div>
-        <span className="countdown-sep">:</span>
+        <span className="countdown-sep" aria-hidden />
         <div className="countdown-unit">
-          <span className="countdown-value">{pad(parts.seconds)}</span>
+          <span className="countdown-value countdown-value--sec">{pad(parts.seconds)}</span>
           <span className="countdown-label">sec</span>
         </div>
       </div>
+      {scheduleLine && <p className="countdown-when">{scheduleLine}</p>}
     </div>
   );
 }

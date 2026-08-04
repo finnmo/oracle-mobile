@@ -5,24 +5,47 @@ import PubReviewsList from './PubReviewsList';
 
 export default function HistorySection() {
   const [rounds, setRounds] = useState<HistoryRound[] | null>(null);
+  const [loadErr, setLoadErr] = useState(false);
+
+  const load = () => {
+    setLoadErr(false);
+    fetchHistory()
+      .then((r) => {
+        setRounds(r);
+        setLoadErr(false);
+      })
+      .catch(() => {
+        setRounds(null);
+        setLoadErr(true);
+      });
+  };
 
   useEffect(() => {
-    fetchHistory()
-      .then(setRounds)
-      .catch(() => setRounds([]));
+    load();
   }, []);
+
+  if (loadErr) {
+    return (
+      <div className="history">
+        <p className="text-muted" style={{ marginBottom: 8 }}>Couldn’t load past weeks.</p>
+        <button type="button" className="btn btn-secondary" onClick={load}>
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (!rounds || rounds.length === 0) return null;
 
   return (
-    <div className="history">
-      <h3 className="history-title">Past Weeks</h3>
+    <details className="history history-disclosure">
+      <summary className="history-title">Past Weeks</summary>
       <div className="history-list">
         {rounds.map((r) => (
           <HistoryItem key={r.weekKey} round={r} />
         ))}
       </div>
-    </div>
+    </details>
   );
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Pub } from '../types';
 
 interface Props {
@@ -11,6 +11,17 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
   const [displayName, setDisplayName] = useState('');
   const [done, setDone] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finishedRef = useRef(false);
+
+  const finish = useCallback(() => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setDisplayName(finalPub.name);
+    setDone(true);
+    completeTimerRef.current = setTimeout(onComplete, 400);
+  }, [finalPub.name, onComplete]);
 
   useEffect(() => {
     const names = [...allPubNames].sort(() => Math.random() - 0.5);
@@ -22,12 +33,11 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
     const start = Date.now();
 
     function tick() {
+      if (finishedRef.current) return;
       const elapsed = Date.now() - start;
 
       if (elapsed >= totalDuration) {
-        setDisplayName(finalPub.name);
-        setDone(true);
-        setTimeout(onComplete, 400);
+        finish();
         return;
       }
 
@@ -43,17 +53,31 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
+      if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
     };
-  }, [finalPub, allPubNames, onComplete]);
+  }, [finalPub, allPubNames, finish]);
 
   return (
-    <div className="card slot-reveal">
+    <div
+      className="card slot-reveal"
+      role="button"
+      tabIndex={0}
+      aria-label={done ? finalPub.name : 'Revealing pub — tap to skip'}
+      onClick={() => { if (!done) finish(); }}
+      onKeyDown={(e) => {
+        if (!done && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          finish();
+        }
+      }}
+    >
       <div className="card-label">Hey — we&apos;re going to</div>
       <div className="slot-reveal-window">
         <h2 className={`pub-name slot-reveal-name ${done ? 'slot-reveal-name--final' : ''}`}>
           {displayName}
         </h2>
       </div>
+      {!done && <p className="slot-skip-hint">Tap to skip</p>}
     </div>
   );
 }

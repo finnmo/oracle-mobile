@@ -133,6 +133,7 @@ export async function handleStatus(req: Request, env: Env): Promise<Response> {
   const deviceId = url.searchParams.get('deviceId');
 
   let userRated: boolean | undefined;
+  let userScore: number | undefined;
   if (
     deviceId &&
     status.round.id &&
@@ -140,12 +141,13 @@ export async function handleStatus(req: Request, env: Env): Promise<Response> {
   ) {
     const deviceHash = await sha256(deviceId);
     const row = await env.DB.prepare(
-      'SELECT 1 FROM ratings WHERE roundId = ? AND deviceHash = ?'
+      'SELECT score FROM ratings WHERE roundId = ? AND deviceHash = ?'
     )
       .bind(status.round.id, deviceHash)
-      .first();
+      .first<{ score: number }>();
     userRated = row != null;
+    if (row && Number.isFinite(row.score)) userScore = row.score;
   }
 
-  return json({ ...status, userRated });
+  return json({ ...status, userRated, userScore });
 }

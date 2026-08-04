@@ -13,19 +13,16 @@ interface Props {
 export default function AdminPage({ onBack }: Props) {
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(true);
-  const [authErr, setAuthErr] = useState<string | null>(null);
   const [showTokenFallback, setShowTokenFallback] = useState(false);
   const [token, setToken] = useState(getAdminToken() ?? '');
 
   const probeAuth = useCallback(async () => {
     setChecking(true);
-    setAuthErr(null);
     try {
       await adminListPubs();
       setAuthed(true);
-    } catch (e) {
+    } catch {
       setAuthed(false);
-      setAuthErr(e instanceof Error ? e.message : 'Not authenticated');
     } finally {
       setChecking(false);
     }
@@ -46,25 +43,25 @@ export default function AdminPage({ onBack }: Props) {
     clearAdminToken();
     setAuthed(false);
     setToken('');
-    // Access session is cleared via Cloudflare logout URL if configured;
-    // for token-only sessions, clearing sessionStorage is enough.
-    setAuthErr(null);
   };
 
   return (
-    <div className="app">
-      <header className="header">
-        <button className="admin-back-btn" onClick={onBack}>← Back</button>
-        <h1>Oracle</h1>
-        <p>Admin</p>
-        {authed && (
-          <button className="admin-logout-btn btn btn-secondary" onClick={handleLogout}>
-            Logout
-          </button>
-        )}
+    <div className="app app--admin">
+      <header className="header header--admin">
+        <div className="header-inner">
+          <button type="button" className="admin-back-btn" onClick={onBack}>← Back</button>
+          <h1>The Oracle</h1>
+          <span className="header-admin-label">Admin</span>
+          {authed && (
+            <button type="button" className="admin-logout-btn btn btn-secondary" onClick={handleLogout}>
+              Logout
+            </button>
+          )}
+        </div>
+        <div className="header-rule" aria-hidden="true" />
       </header>
 
-      <main>
+      <main className="app-main app-main--admin">
         {checking && (
           <div className="card loading-card">
             <div className="spinner" />
@@ -74,18 +71,11 @@ export default function AdminPage({ onBack }: Props) {
         {!checking && !authed && (
           <div className="card">
             <div className="card-label">Admin access</div>
-            <p className="text-muted" style={{ marginBottom: 12 }}>
-              Cloudflare Access should gate this page with Google. After you sign in, the admin
-              controls load automatically.
+            <p className="inline-error" style={{ marginBottom: 12 }}>
+              Error — contact the site admin.
             </p>
-            <p className="text-muted" style={{ marginBottom: 12, fontSize: 13 }}>
-              If you already signed in but still see this, your Access app must protect both{' '}
-              <code>/admin</code> and <code>/api/admin</code> (same application), and the Worker
-              needs <code>CF_ACCESS_TEAM_DOMAIN</code> + <code>CF_ACCESS_AUD</code> deployed.
-            </p>
-            {authErr && <p className="inline-error" style={{ marginBottom: 12 }}>{authErr}</p>}
             <button className="btn btn-primary btn-full" onClick={() => { window.location.href = '/admin'; }}>
-              Retry /admin
+              Retry
             </button>
 
             <details
@@ -95,9 +85,6 @@ export default function AdminPage({ onBack }: Props) {
               style={{ marginTop: 16 }}
             >
               <summary>Use API token instead</summary>
-              <p className="text-muted" style={{ margin: '10px 0', fontSize: 13 }}>
-                Emergency / script fallback — same <code>ADMIN_API_TOKEN</code> as curl.
-              </p>
               <input
                 type="password"
                 className="admin-input"
@@ -105,6 +92,7 @@ export default function AdminPage({ onBack }: Props) {
                 value={token}
                 onChange={e => setToken(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleTokenLogin()}
+                style={{ marginTop: 10 }}
               />
               <button className="btn btn-secondary btn-full" style={{ marginTop: 10 }} onClick={handleTokenLogin}>
                 Login with token

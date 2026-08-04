@@ -29,6 +29,8 @@ export interface StatusResponse {
   round: Round;
   ratings: RatingStats | null;
   userRated?: boolean;
+  /** This device's score when userRated (1–5). */
+  userScore?: number;
 }
 
 export interface HistoryRound {

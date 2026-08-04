@@ -7,7 +7,8 @@ import PubCard from './components/PubCard';
 import SlotReveal from './components/SlotReveal';
 import RatingSection from './components/RatingSection';
 import HistorySection from './components/HistorySection';
-import StatsDrawer from './components/StatsDrawer';
+import StatsDrawer, { StatsPanel } from './components/StatsDrawer';
+import { BenchIcon, ChartIcon } from './components/PubIcons';
 import VotingSection from './components/VotingSection';
 import AdminPage from './components/AdminPage';
 import PubCrawlGame from './components/PubCrawlGame';
@@ -139,11 +140,20 @@ function MainApp() {
     }
   }, [status?.round?.id]);
 
-  // Trigger slot reveal when state transitions to 'announced'
+  // Trigger slot reveal (or instant confetti when only one name in the pool)
   useEffect(() => {
-    if (status?.state === 'announced' && !confettiFiredRef.current && pubNames.length > 1) {
+    if (status?.state !== 'announced' || confettiFiredRef.current) return;
+    if (pubNames.length > 1) {
       setRevealing(true);
+      return;
     }
+    confettiFiredRef.current = true;
+    confetti({
+      particleCount: 90,
+      spread: 70,
+      origin: { y: 0.4 },
+      colors: ['#1a4538', '#c4a574', '#6b5340', '#c5d4cb', '#0a1410'],
+    });
   }, [status?.state, pubNames.length]);
 
   const handleRevealComplete = useCallback(() => {
@@ -153,63 +163,88 @@ function MainApp() {
       particleCount: 120,
       spread: 80,
       origin: { y: 0.4 },
-      colors: ['#f59e0b', '#fcd34d', '#fbbf24', '#e8f0f8', '#7d9ab5'],
+      colors: ['#1a4538', '#c4a574', '#6b5340', '#c5d4cb', '#0a1410'],
     });
   }, []);
 
   return (
     <div className="app">
       <header className="header">
-        <h1 onClick={() => {
-          const now = Date.now();
-          const key = '__ot';
-          const raw = sessionStorage.getItem(key);
-          const { count, ts } = raw ? JSON.parse(raw) as { count: number; ts: number } : { count: 0, ts: 0 };
-          const next = now - ts < 1500 ? count + 1 : 1;
-          if (next >= 5) { sessionStorage.removeItem(key); setGameOpen(v => !v); }
-          else sessionStorage.setItem(key, JSON.stringify({ count: next, ts: now }));
-        }}>Oracle</h1>
-        <p>🍺🍗🍷🥩 Pub of the Week</p>
-        <nav className="header-nav">
-          <a className="btn btn-secondary header-admin-btn" href="/admin">
-            Admin
-          </a>
-          <button className="hamburger" onClick={() => setMenuOpen(true)} aria-label="Open stats">
-            <span /><span /><span />
-          </button>
-        </nav>
+        <div className="header-inner">
+          <div
+            className="header-brand"
+            onClick={() => {
+              const now = Date.now();
+              const key = '__ot';
+              const raw = sessionStorage.getItem(key);
+              const { count, ts } = raw ? JSON.parse(raw) as { count: number; ts: number } : { count: 0, ts: 0 };
+              const next = now - ts < 1500 ? count + 1 : 1;
+              if (next >= 5) { sessionStorage.removeItem(key); setGameOpen(v => !v); }
+              else sessionStorage.setItem(key, JSON.stringify({ count: next, ts: now }));
+            }}
+          >
+            <BenchIcon className="header-bench" />
+            <h1>The Oracle</h1>
+          </div>
+          <div className="header-actions">
+            <button
+              type="button"
+              className="header-menu-btn"
+              onClick={() => setMenuOpen(true)}
+              aria-label="Open menu"
+            >
+              <span className="header-menu-icon" aria-hidden>
+                <span />
+                <span />
+                <span />
+              </span>
+            </button>
+            <a href="/admin" className="header-admin-link">Admin</a>
+          </div>
+        </div>
+        <div className="header-rule" aria-hidden="true" />
       </header>
 
+      <div className="app-body">
+        <main className="app-main">
+          {gameOpen && <PubCrawlGame pubs={pubNames} onClose={() => setGameOpen(false)} />}
+
+          {loading && !status && (
+            <div className="card loading-card">
+              <div className="spinner" />
+            </div>
+          )}
+
+          {fetchErr && !status && (
+            <div className="card error-card">
+              <p>{fetchErr}</p>
+              <button className="btn btn-primary" onClick={load} style={{ marginTop: 12 }}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {status && (
+            <StatusView
+              status={status}
+              onRefresh={load}
+              revealing={revealing}
+              pubNames={pubNames}
+              onRevealComplete={handleRevealComplete}
+            />
+          )}
+        </main>
+
+        <aside className="stats-rail" aria-label="Stats">
+          <h2 className="stats-rail-title">
+            <ChartIcon className="stats-title-icon" />
+            Stats
+          </h2>
+          <StatsPanel compact />
+        </aside>
+      </div>
+
       <StatsDrawer open={menuOpen} onClose={() => setMenuOpen(false)} />
-
-      <main>
-        {gameOpen && <PubCrawlGame pubs={pubNames} onClose={() => setGameOpen(false)} />}
-
-        {loading && !status && (
-          <div className="card loading-card">
-            <div className="spinner" />
-          </div>
-        )}
-
-        {fetchErr && !status && (
-          <div className="card error-card">
-            <p>{fetchErr}</p>
-            <button className="btn btn-primary" onClick={load} style={{ marginTop: 12 }}>
-              Retry
-            </button>
-          </div>
-        )}
-
-        {status && (
-          <StatusView
-            status={status}
-            onRefresh={load}
-            revealing={revealing}
-            pubNames={pubNames}
-            onRevealComplete={handleRevealComplete}
-          />
-        )}
-      </main>
     </div>
   );
 }
@@ -228,13 +263,13 @@ function StatusView({ status, onRefresh, revealing, pubNames, onRevealComplete }
   const { state, round, ratings, serverNowUtc } = status;
 
   return (
-    <>
+    <div className="status-stack">
       {state === 'countdown_announce' && (
         <>
           <CountdownTimer
             targetUtc={round.announceAtUtc}
             serverNowUtc={serverNowUtc}
-            label="Announcing in"
+            label="Announce"
           />
           <VotingSection />
         </>
@@ -262,15 +297,12 @@ function StatusView({ status, onRefresh, revealing, pubNames, onRevealComplete }
       {state === 'rating_open' && round.pub && round.id && (
         <>
           <PubCard pub={round.pub} showBadge={false} />
-          <div className="card rating-open-badge">
-            <div className="card-label">Ratings open</div>
-            <p className="state-hint">Until midnight — go rate it!</p>
-          </div>
           <RatingSection
             roundId={round.id}
             ratings={ratings}
             onRated={onRefresh}
             userRated={status.userRated}
+            userScore={status.userScore}
           />
         </>
       )}
@@ -301,6 +333,6 @@ function StatusView({ status, onRefresh, revealing, pubNames, onRevealComplete }
       )}
 
       <HistorySection />
-    </>
+    </div>
   );
 }

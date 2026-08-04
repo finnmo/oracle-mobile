@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { SproutIcon } from './PubIcons';
 import { BallotPub, VotesResponse } from '../types';
 import { fetchVotes, castVote, castVeto, clearVote, getOrCreateDeviceId } from '../api';
 
@@ -8,8 +9,8 @@ export default function VotingSection() {
   const [err, setErr]         = useState<string | null>(null);
   const [voting, setVoting]   = useState<string | null>(null);
   const [vetoing, setVetoing] = useState(false);
-  const [clearing, setClearing] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const [vetoPickerOpen, setVetoPickerOpen] = useState(false);
   const [vetoTarget, setVetoTarget] = useState<BallotPub | null>(null);
 
   const deviceId = getOrCreateDeviceId();
@@ -34,6 +35,20 @@ export default function VotingSection() {
 
   const handleVote = async (pub: BallotPub) => {
     if (voting) return;
+    // Clicking your current vote removes it
+    if (data?.userVote === pub.id) {
+      setVoting(pub.id);
+      setActionErr(null);
+      try {
+        await clearVote(deviceId);
+        await load();
+      } catch (e) {
+        setActionErr(e instanceof Error ? e.message : 'Could not remove vote');
+      } finally {
+        setVoting(null);
+      }
+      return;
+    }
     setVoting(pub.id);
     setActionErr(null);
     try {
@@ -43,20 +58,6 @@ export default function VotingSection() {
       setActionErr(e instanceof Error ? e.message : 'Vote failed');
     } finally {
       setVoting(null);
-    }
-  };
-
-  const handleClearVote = async () => {
-    if (clearing || !data?.userVote) return;
-    setClearing(true);
-    setActionErr(null);
-    try {
-      await clearVote(deviceId);
-      await load();
-    } catch (e) {
-      setActionErr(e instanceof Error ? e.message : 'Could not remove vote');
-    } finally {
-      setClearing(false);
     }
   };
 
@@ -78,7 +79,7 @@ export default function VotingSection() {
   if (loading) {
     return (
       <div className="card">
-        <div className="card-label">This week's vote</div>
+        <div className="card-label">This week&apos;s vote</div>
         <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
           <div className="spinner" />
         </div>
@@ -89,85 +90,105 @@ export default function VotingSection() {
   if (err || !data) {
     return (
       <div className="card">
-        <div className="card-label">This week's vote</div>
+        <div className="card-label">This week&apos;s vote</div>
         <p className="text-muted">{err ?? 'No data'}</p>
+        <button type="button" className="btn btn-primary" onClick={() => { setLoading(true); load(); }} style={{ marginTop: 12 }}>
+          Retry
+        </button>
       </div>
     );
   }
 
   const maxVotes = Math.max(1, ...data.pubs.map(p => p.votes));
+  const vetoable = data.pubs.filter(p => !p.vetoed);
+  const myVetoPub = data.userVetoedPubId
+    ? data.pubs.find(p => p.id === data.userVetoedPubId)
+    : null;
 
   return (
-    <div className="card vote-card">
-      <div className="card-label">This week's vote</div>
-      <p className="vote-hint">
-        {data.totalVotes === 0
-          ? 'No votes yet — be the first!'
-          : `${data.totalVotes} vote${data.totalVotes !== 1 ? 's' : ''} cast${data.userVote ? ' · your choice is highlighted' : ''}`}
-      </p>
-
-      {data.userVote && (
-        <div className="vote-undo-row">
-          <button
-            type="button"
-            className="btn btn-secondary vote-undo-btn"
-            onClick={handleClearVote}
-            disabled={clearing}
-          >
-            {clearing ? '…' : 'Undo vote'}
-          </button>
-          <span className="vote-undo-hint">Removes your vote only — not someone else&apos;s</span>
+    <div className="vote-section">
+      <div className="vote-section-head">
+        <div className="vote-section-top">
+          <h2 className="vote-section-title">
+            <SproutIcon className="vote-sprout" />
+            This week&apos;s vote
+          </h2>
+          {!data.userVetoUsed && vetoable.length > 0 && (
+            <button
+              type="button"
+              className="vote-veto-btn"
+              onClick={() => setVetoPickerOpen(true)}
+              disabled={vetoing}
+            >
+              Monthly veto
+            </button>
+          )}
+          {data.userVetoUsed && (
+            <span className="vote-veto-used">
+              {myVetoPub
+                ? `Vetoed: ${myVetoPub.name}`
+                : 'Veto used'}
+            </span>
+          )}
         </div>
-      )}
+        <div className="vote-section-rule" aria-hidden="true" />
+      </div>
 
       <div className="vote-list" role="list">
         {data.pubs.map(pub => {
-          const isMyVote  = data.userVote === pub.id;
-          const isVetoed  = pub.vetoed;
-          const isMyVeto  = data.userVetoedPubId === pub.id;
+          const isMyVote = data.userVote === pub.id;
+          const isVetoed = pub.vetoed;
+          const isMyVeto = data.userVetoedPubId === pub.id;
 
           return (
             <div
               key={pub.id}
-              className={`vote-row ${isVetoed ? 'vote-row--vetoed' : ''} ${isMyVote ? 'vote-row--mine' : ''}`}
+              className={`card vote-row ${isVetoed ? 'vote-row--vetoed' : ''} ${isMyVote ? 'vote-row--mine' : ''} ${!isVetoed ? 'vote-row--tappable' : ''}`}
               role="listitem"
-              aria-label={`${pub.name}, ${pub.votes} vote${pub.votes !== 1 ? 's' : ''}${isVetoed ? ', vetoed' : ''}`}
+              tabIndex={!isVetoed ? 0 : undefined}
+              aria-label={`${pub.name}, ${pub.votes} vote${pub.votes !== 1 ? 's' : ''}${isVetoed ? ', vetoed' : ''}${isMyVote ? ', your vote — activate to remove' : ''}`}
+              onClick={!isVetoed ? () => handleVote(pub) : undefined}
+              onKeyDown={!isVetoed ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleVote(pub);
+                }
+              } : undefined}
             >
+              <div
+                className={`vote-count-badge ${pub.votes > 0 ? 'vote-count-badge--hot' : ''} ${isMyVote ? 'vote-count-badge--mine' : ''}`}
+                aria-hidden
+              >
+                <span className="vote-count-badge-num">{pub.votes}</span>
+              </div>
+
               <div className="vote-row-info">
                 <span className="vote-pub-name">
                   {pub.name}
-                  {isVetoed && <span className="veto-badge">vetoed</span>}
+                  {isVetoed && (
+                    <span className="veto-badge">{isMyVeto ? 'your veto' : 'vetoed'}</span>
+                  )}
+                  {isMyVote && <span className="you-badge">YOU</span>}
                 </span>
                 <div className="vote-bar-track" role="progressbar" aria-valuenow={pub.votes} aria-valuemin={0} aria-valuemax={maxVotes}>
                   <div
                     className="vote-bar-fill"
-                    style={{ width: `${(pub.votes / maxVotes) * 100}%` }}
+                    style={{ transform: `scaleX(${Math.max(pub.votes / maxVotes, pub.votes > 0 ? 0.04 : 0)})` }}
                   />
                 </div>
-                <span className="vote-count">{pub.votes} vote{pub.votes !== 1 ? 's' : ''}</span>
               </div>
 
               <div className="vote-row-actions">
-                <button
-                  className={`btn vote-btn ${isMyVote ? 'vote-btn--active' : 'btn-secondary'}`}
-                  onClick={() => handleVote(pub)}
-                  disabled={voting === pub.id}
-                >
-                  {isMyVote ? '✓ Voted' : 'Vote'}
-                </button>
-
-                {!data.userVetoUsed && !isVetoed && (
+                {!isVetoed && (
                   <button
-                    className="btn veto-btn btn-secondary"
-                    onClick={() => setVetoTarget(pub)}
-                    disabled={vetoing}
-                    title="Veto this pub — excludes it from the random pick this week (once per month)"
+                    className={`btn vote-btn ${isMyVote ? 'vote-btn--active' : 'vote-btn--outline'}`}
+                    onClick={(e) => { e.stopPropagation(); handleVote(pub); }}
+                    disabled={voting === pub.id}
+                    type="button"
+                    aria-pressed={isMyVote}
                   >
-                    Veto
+                    {isMyVote ? '✓ Voted' : 'Vote'}
                   </button>
-                )}
-                {isMyVeto && (
-                  <span className="veto-used-label">your veto</span>
                 )}
               </div>
             </div>
@@ -175,42 +196,35 @@ export default function VotingSection() {
         })}
       </div>
 
-      {data.userVetoUsed && !data.userVetoedPubId && (
-        <p className="vote-footnote text-muted">You've used your veto this month.</p>
-      )}
-
       {actionErr && <p className="inline-error" style={{ marginTop: 8 }}>{actionErr}</p>}
 
       <details className="vote-how">
-        <summary>How votes, vetoes &amp; random picks work</summary>
+        <summary>How votes &amp; vetoes work</summary>
         <div className="vote-how-body">
           <p>
-            <strong>Your vote</strong> is tied to this browser only — use <strong>Undo vote</strong> to delete it
-            while voting is open. You can&apos;t change someone else&apos;s vote.
+            Your vote is tied to this browser — tap your vote again to clear it while voting is open.
           </p>
           <p>
-            <strong>If anyone has voted:</strong> the scheduled pick (or automatic picker) chooses the pub with the{' '}
-            <strong>highest vote count</strong>. Ties are broken in favour of the pub that reached that count first.
+            With votes cast, the pick goes to the highest count (ties: first to reach it).
+            With zero votes, Oracle picks a random active pub, skipping vetoed pubs and usually the last three visited.
           </p>
           <p>
-            <strong>If there are zero votes:</strong> Oracle picks a random active pub, skipping pubs{' '}
-            <strong>vetoed this week</strong> and usually the <strong>last three</strong> pubs we already went to
-            (with fallbacks if that leaves nobody).
-          </p>
-          <p>
-            <strong>Vetoes</strong> only apply when the choice would otherwise be random — they remove a pub from that
-            pool for this week. You get <strong>one veto per calendar month</strong>.
-          </p>
-          <p className="vote-how-admin">
-            <strong>Admin</strong> can always announce a specific pub for the week, which overrides the rules above.
+            A veto removes a pub from the random pool this week only — one per calendar month.
+            It does not override a clear vote winner.
           </p>
         </div>
       </details>
 
-      <p className="vote-footnote text-muted">
-        {!data.userVetoUsed && 'You have one veto this month (see above). '}
-        Voting closes once this week&apos;s pub is announced.
-      </p>
+      {vetoPickerOpen && (
+        <VetoPickerModal
+          pubs={vetoable}
+          onPick={(pub) => {
+            setVetoPickerOpen(false);
+            setVetoTarget(pub);
+          }}
+          onCancel={() => setVetoPickerOpen(false)}
+        />
+      )}
 
       {vetoTarget && (
         <VetoConfirmModal
@@ -220,6 +234,65 @@ export default function VotingSection() {
           confirming={vetoing}
         />
       )}
+    </div>
+  );
+}
+
+function VetoPickerModal({
+  pubs,
+  onPick,
+  onCancel,
+}: {
+  pubs: BallotPub[];
+  onPick: (pub: BallotPub) => void;
+  onCancel: () => void;
+}) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onCancel]);
+
+  return (
+    <div className="veto-modal-backdrop" onClick={onCancel}>
+      <div
+        className="veto-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="veto-picker-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="veto-modal-title" id="veto-picker-title">Veto a pub</h3>
+        <p className="veto-modal-message">
+          One per month. Excludes them from a random pick this week — not from a vote winner.
+        </p>
+        <ul className="veto-picker-list">
+          {pubs.map(pub => (
+            <li key={pub.id}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-full"
+                onClick={() => onPick(pub)}
+              >
+                {pub.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="veto-modal-actions">
+          <button ref={closeRef} className="btn btn-secondary" onClick={onCancel} type="button">
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -276,8 +349,7 @@ function VetoConfirmModal({
       >
         <h3 className="veto-modal-title">Confirm veto</h3>
         <p className="veto-modal-message" id="veto-modal-msg">
-          Veto &ldquo;{pubName}&rdquo;? This excludes it from the random pick this week.
-          You only get one veto per month.
+          Veto &ldquo;{pubName}&rdquo;? This is your one veto for the month.
         </p>
         <div className="veto-modal-actions">
           <button
@@ -295,7 +367,7 @@ function VetoConfirmModal({
             disabled={confirming}
             type="button"
           >
-            {confirming ? 'Vetoing…' : 'Veto'}
+            {confirming ? 'Vetoing…' : 'Confirm veto'}
           </button>
         </div>
       </div>

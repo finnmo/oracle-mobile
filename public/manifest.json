@@ -4,8 +4,8 @@
   "description": "The Friday pub selector for the group.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#101c2c",
-  "theme_color": "#f59e0b",
+  "background_color": "#c5d4cb",
+  "theme_color": "#1a4538",
   "icons": [
     {
       "src": "/icon-192.png",

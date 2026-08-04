@@ -2,32 +2,61 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { StatsResponse, PubStat } from '../types';
 import { fetchStats } from '../api';
 import PubReviewsList from './PubReviewsList';
+import { ChartIcon } from './PubIcons';
 
-interface Props {
+/** Shared stats body — used in desktop rail and mobile drawer. */
+export function StatsPanel({ compact }: { compact?: boolean }) {
+  const [data, setData] = useState<StatsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setErr(null);
+    fetchStats()
+      .then(setData)
+      .catch((e) => setErr(e instanceof Error ? e.message : 'Failed to load'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading && !data) {
+    return (
+      <div className="drawer-loading">
+        <div className="spinner" />
+      </div>
+    );
+  }
+
+  if (err && !data) {
+    return (
+      <div>
+        <p className="inline-error">{err}</p>
+        <button type="button" className="btn btn-secondary" onClick={load} style={{ marginTop: 8 }}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  return <StatsContent data={data} compact={compact} />;
+}
+
+interface DrawerProps {
   open: boolean;
   onClose: () => void;
 }
 
-export default function StatsDrawer({ open, onClose }: Props) {
-  const [data, setData] = useState<StatsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const hasFetched = useRef(false);
+export default function StatsDrawer({ open, onClose }: DrawerProps) {
   const drawerRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    if (!open || hasFetched.current) return;
-    hasFetched.current = true;
-    setLoading(true);
-    fetchStats()
-      .then(setData)
-      .catch((e) => setErr(e.message))
-      .finally(() => setLoading(false));
-  }, [open]);
-
-  // Store the element that opened the drawer so we can restore focus on close
   useEffect(() => {
     if (open) {
       triggerRef.current = document.activeElement as HTMLElement;
@@ -38,7 +67,6 @@ export default function StatsDrawer({ open, onClose }: Props) {
     }
   }, [open]);
 
-  // Escape to close + focus trap
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -89,41 +117,53 @@ export default function StatsDrawer({ open, onClose }: Props) {
         aria-labelledby="stats-title"
       >
         <div className="drawer-header">
-          <h2 className="drawer-title" id="stats-title">Stats</h2>
-          <button ref={closeRef} className="drawer-close" onClick={onClose} aria-label="Close">
-            ✕
+          <h2 className="drawer-title" id="stats-title">
+            <ChartIcon className="stats-title-icon" />
+            Stats
+          </h2>
+          <button ref={closeRef} className="drawer-close" onClick={onClose} type="button">
+            Close
           </button>
         </div>
 
         <div className="drawer-body">
-          {loading && (
-            <div className="drawer-loading">
-              <div className="spinner" />
-            </div>
-          )}
+          {open && <StatsPanel />}
+        </div>
 
-          {err && <p className="inline-error">{err}</p>}
-
-          {data && <StatsContent data={data} />}
+        <div className="drawer-footer">
+          <a href="/admin" className="drawer-admin-link">Admin</a>
         </div>
       </aside>
     </>
   );
 }
 
-function StatsContent({ data }: { data: StatsResponse }) {
+function StatsContent({ data, compact }: { data: StatsResponse; compact?: boolean }) {
   const { pubs, totalVisits, totalRatings, bestPub } = data;
   const maxVisits = Math.max(...pubs.map((p) => p.visits), 1);
   const visited = pubs.filter((p) => p.visits > 0);
   const unvisited = pubs.filter((p) => p.visits === 0);
+  const tastedPct = pubs.length > 0 ? Math.round((visited.length / pubs.length) * 100) : 0;
 
   return (
-    <>
+    <div className={compact ? 'stats-content stats-content--compact' : 'stats-content'}>
       <div className="stats-summary">
         <SummaryStat label="Total visits" value={totalVisits} />
         <SummaryStat label="Total ratings" value={totalRatings} />
         <SummaryStat label="Pubs visited" value={visited.length} />
       </div>
+
+      {pubs.length > 0 && (
+        <div className="stats-tasted" aria-label={`${visited.length} of ${pubs.length} pubs visited`}>
+          <div className="stats-tasted-label">
+            <span>Pubs visited</span>
+            <span>{visited.length}/{pubs.length}</span>
+          </div>
+          <div className="stats-tasted-track">
+            <div className="stats-tasted-fill" style={{ width: `${tastedPct}%` }} />
+          </div>
+        </div>
+      )}
 
       {bestPub && bestPub.avgScore != null && (
         <div className="stats-best">
@@ -136,8 +176,8 @@ function StatsContent({ data }: { data: StatsResponse }) {
       <div className="stats-chart-title">Visits per pub</div>
       <p className="stats-hint">Tap a pub to read reviews</p>
       <div className="stats-chart">
-        {visited.map((pub) => (
-          <PubBarExpandable key={pub.id} pub={pub} maxVisits={maxVisits} />
+        {visited.map((pub, i) => (
+          <PubBarExpandable key={pub.id} pub={pub} maxVisits={maxVisits} index={i} />
         ))}
         {visited.length === 0 && (
           <p className="text-muted" style={{ fontSize: 14 }}>No closed rounds yet.</p>
@@ -154,20 +194,36 @@ function StatsContent({ data }: { data: StatsResponse }) {
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }
 
 function SummaryStat({ label, value }: { label: string; value: number }) {
+  const [shown, setShown] = useState(0);
+
+  useEffect(() => {
+    let frame = 0;
+    const start = performance.now();
+    const duration = 520;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - (1 - t) ** 3;
+      setShown(Math.round(value * eased));
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+
   return (
     <div className="summary-stat">
-      <span className="summary-value">{value}</span>
+      <span className="summary-value">{shown}</span>
       <span className="summary-label">{label}</span>
     </div>
   );
 }
 
-function PubBarExpandable({ pub, maxVisits }: { pub: PubStat; maxVisits: number }) {
+function PubBarExpandable({ pub, maxVisits, index }: { pub: PubStat; maxVisits: number; index: number }) {
   const [open, setOpen] = useState(false);
   const pct = Math.max((pub.visits / maxVisits) * 100, 4);
   const ratingColor = pub.avgScore == null
@@ -175,11 +231,14 @@ function PubBarExpandable({ pub, maxVisits }: { pub: PubStat; maxVisits: number 
     : pub.avgScore >= 4
     ? 'var(--accent)'
     : pub.avgScore >= 3
-    ? '#d97706'
-    : '#92400e';
+    ? 'color-mix(in srgb, var(--accent) 65%, var(--timber-deep))'
+    : 'var(--accent-dim)';
 
   return (
-    <div className={`pub-bar-block ${open ? 'pub-bar-block--open' : ''}`}>
+    <div
+      className={`pub-bar-block ${open ? 'pub-bar-block--open' : ''}`}
+      style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+    >
       <button
         type="button"
         className="pub-bar-toggle"
@@ -196,7 +255,10 @@ function PubBarExpandable({ pub, maxVisits }: { pub: PubStat; maxVisits: number 
           <div className="pub-bar-track">
             <div
               className="pub-bar-fill"
-              style={{ width: `${pct}%`, background: ratingColor }}
+              style={{
+                transform: `scaleX(${Math.max(pct / 100, pub.visits > 0 ? 0.04 : 0)})`,
+                background: ratingColor,
+              }}
             />
           </div>
           <div className="pub-bar-meta">
@@ -218,4 +280,3 @@ function PubBarExpandable({ pub, maxVisits }: { pub: PubStat; maxVisits: number 
     </div>
   );
 }
-
