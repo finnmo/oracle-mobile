@@ -2,6 +2,7 @@ import { Env } from '../types';
 import { json, error } from '../response';
 import { sha256 } from '../auth';
 import { getVoteAndRoundAnchorPerthYmd } from '../timeUtils';
+import { isValidDeviceId } from '../utils/validate';
 
 interface VetoBody {
   pubId: string;
@@ -14,6 +15,10 @@ export async function handleVetoes(request: Request, env: Env): Promise<Response
 }
 
 async function castVeto(request: Request, env: Env): Promise<Response> {
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const { success } = await env.RATE_LIMITER.limit({ key: ip });
+  if (!success) return error('Too many requests', 429);
+
   let body: VetoBody;
   try {
     body = (await request.json()) as VetoBody;
@@ -22,8 +27,8 @@ async function castVeto(request: Request, env: Env): Promise<Response> {
   }
 
   const { pubId, deviceId } = body;
-  if (!pubId)    return error('pubId is required', 400);
-  if (!deviceId) return error('deviceId is required', 400);
+  if (!pubId)                   return error('pubId is required', 400);
+  if (!isValidDeviceId(deviceId)) return error('Invalid request', 400);
 
   const pub = await env.DB.prepare(
     'SELECT id FROM pubs WHERE id = ? AND active = 1'

@@ -11,20 +11,44 @@ interface Props {
 }
 
 export default function AdminPage({ onBack }: Props) {
+  const [authed, setAuthed] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [authErr, setAuthErr] = useState<string | null>(null);
+  const [showTokenFallback, setShowTokenFallback] = useState(false);
   const [token, setToken] = useState(getAdminToken() ?? '');
-  const [authed, setAuthed] = useState(!!getAdminToken());
 
-  const handleLogin = () => {
-    // Strip any non-ASCII characters (e.g. em-dashes from copy-paste) before storing
+  const probeAuth = useCallback(async () => {
+    setChecking(true);
+    setAuthErr(null);
+    try {
+      await adminListPubs();
+      setAuthed(true);
+    } catch (e) {
+      setAuthed(false);
+      setAuthErr(e instanceof Error ? e.message : 'Not authenticated');
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    probeAuth();
+  }, [probeAuth]);
+
+  const handleTokenLogin = () => {
     const t = token.trim().replace(/[^\x20-\x7E]/g, '');
     if (!t) return;
     setAdminToken(t);
-    setAuthed(true);
+    probeAuth();
   };
 
   const handleLogout = () => {
     clearAdminToken();
     setAuthed(false);
+    setToken('');
+    // Access session is cleared via Cloudflare logout URL if configured;
+    // for token-only sessions, clearing sessionStorage is enough.
+    setAuthErr(null);
   };
 
   return (
@@ -41,29 +65,58 @@ export default function AdminPage({ onBack }: Props) {
       </header>
 
       <main>
-        {!authed ? (
-          <div className="card">
-            <div className="card-label">Admin login</div>
-            <p className="text-muted" style={{ marginBottom: 12 }}>
-              Enter your ADMIN_API_TOKEN to continue.
-            </p>
-            <input
-              type="password"
-              className="admin-input"
-              placeholder="Admin token"
-              value={token}
-              onChange={e => setToken(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleLogin()}
-              autoFocus
-            />
-            <button className="btn btn-primary btn-full" style={{ marginTop: 10 }} onClick={handleLogin}>
-              Login
-            </button>
+        {checking && (
+          <div className="card loading-card">
+            <div className="spinner" />
           </div>
-        ) : (
+        )}
+
+        {!checking && !authed && (
+          <div className="card">
+            <div className="card-label">Admin access</div>
+            <p className="text-muted" style={{ marginBottom: 12 }}>
+              Cloudflare Access should gate this page with Google. After you sign in, the admin
+              controls load automatically.
+            </p>
+            <p className="text-muted" style={{ marginBottom: 12, fontSize: 13 }}>
+              If you already signed in but still see this, your Access app must protect both{' '}
+              <code>/admin</code> and <code>/api/admin</code> (same application), and the Worker
+              needs <code>CF_ACCESS_TEAM_DOMAIN</code> + <code>CF_ACCESS_AUD</code> deployed.
+            </p>
+            {authErr && <p className="inline-error" style={{ marginBottom: 12 }}>{authErr}</p>}
+            <button className="btn btn-primary btn-full" onClick={() => { window.location.href = '/admin'; }}>
+              Retry /admin
+            </button>
+
+            <details
+              className="admin-token-fallback"
+              open={showTokenFallback}
+              onToggle={(e) => setShowTokenFallback((e.target as HTMLDetailsElement).open)}
+              style={{ marginTop: 16 }}
+            >
+              <summary>Use API token instead</summary>
+              <p className="text-muted" style={{ margin: '10px 0', fontSize: 13 }}>
+                Emergency / script fallback — same <code>ADMIN_API_TOKEN</code> as curl.
+              </p>
+              <input
+                type="password"
+                className="admin-input"
+                placeholder="Admin token"
+                value={token}
+                onChange={e => setToken(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleTokenLogin()}
+              />
+              <button className="btn btn-secondary btn-full" style={{ marginTop: 10 }} onClick={handleTokenLogin}>
+                Login with token
+              </button>
+            </details>
+          </div>
+        )}
+
+        {!checking && authed && (
           <>
-            <RoundPanel />
-            <PubPanel />
+            <RoundPanel onUnauthorized={() => { clearAdminToken(); setAuthed(false); }} />
+            <PubPanel onUnauthorized={() => { clearAdminToken(); setAuthed(false); }} />
           </>
         )}
       </main>
@@ -73,11 +126,22 @@ export default function AdminPage({ onBack }: Props) {
 
 // ── Round management ──────────────────────────────────────────────────────────
 
-function RoundPanel() {
+function RoundPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [result, setResult]   = useState<string | null>(null);
   const [err, setErr]         = useState<string | null>(null);
   const [busy, setBusy]       = useState(false);
-  const [customPub, setCustomPub] = useState('');
+  const [selectedPubId, setSelectedPubId] = useState('');
+  const [pubs, setPubs]       = useState<AdminPub[]>([]);
+
+  useEffect(() => {
+    adminListPubs()
+      .then((list) => setPubs(list.filter((p) => p.active)))
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : 'Failed to load pubs';
+        setErr(msg);
+        if (msg.includes('Unauthorized')) onUnauthorized();
+      });
+  }, [onUnauthorized]);
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -87,11 +151,9 @@ function RoundPanel() {
       const res = await action();
       setResult(JSON.stringify(res, null, 2));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error');
-      if (e instanceof Error && e.message === 'Unauthorized — check your token') {
-        clearAdminToken();
-        window.location.reload();
-      }
+      const msg = e instanceof Error ? e.message : 'Error';
+      setErr(msg);
+      if (msg.includes('Unauthorized')) onUnauthorized();
     } finally {
       setBusy(false);
     }
@@ -117,17 +179,21 @@ function RoundPanel() {
       </div>
 
       <div className="admin-custom-announce">
-        <input
+        <select
           className="admin-input"
-          placeholder="Pub name (e.g. The Como)"
-          value={customPub}
-          onChange={e => setCustomPub(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && customPub.trim() && run(() => adminAnnounce({ pubName: customPub.trim() }))}
-        />
+          value={selectedPubId}
+          onChange={(e) => setSelectedPubId(e.target.value)}
+          aria-label="Select pub to announce"
+        >
+          <option value="">Select a pub…</option>
+          {pubs.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
         <button
           className="btn btn-primary"
-          onClick={() => run(() => adminAnnounce({ pubName: customPub.trim() }))}
-          disabled={busy || !customPub.trim()}
+          onClick={() => run(() => adminAnnounce({ pubId: selectedPubId }))}
+          disabled={busy || !selectedPubId}
         >
           Announce this pub
         </button>
@@ -144,7 +210,7 @@ function RoundPanel() {
 
 // ── Pub management ────────────────────────────────────────────────────────────
 
-function PubPanel() {
+function PubPanel({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [pubs, setPubs]       = useState<AdminPub[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState<string | null>(null);
@@ -159,11 +225,13 @@ function PubPanel() {
       setPubs(list);
       setErr(null);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to load pubs');
+      const msg = e instanceof Error ? e.message : 'Failed to load pubs';
+      setErr(msg);
+      if (msg.includes('Unauthorized')) onUnauthorized();
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onUnauthorized]);
 
   useEffect(() => { load(); }, [load]);
 

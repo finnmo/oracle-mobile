@@ -14,13 +14,13 @@ const BASE = '/api';
 export async function fetchStatus(): Promise<StatusResponse> {
   const deviceId = getOrCreateDeviceId();
   const res = await fetch(`${BASE}/status?deviceId=${encodeURIComponent(deviceId)}`);
-  if (!res.ok) throw new Error(`Status fetch failed: ${res.status}`);
+  if (!res.ok) throw new Error('Could not connect — please try again');
   return res.json() as Promise<StatusResponse>;
 }
 
 export async function fetchHistory(): Promise<HistoryRound[]> {
   const res = await fetch(`${BASE}/rounds`);
-  if (!res.ok) throw new Error(`History fetch failed: ${res.status}`);
+  if (!res.ok) throw new Error('Could not load history');
   const data = (await res.json()) as { rounds: HistoryRound[] };
   return data.rounds;
 }
@@ -40,7 +40,7 @@ export async function submitRating(
   const data = (await res.json()) as { error?: string; ratings?: { average: number; count: number } };
 
   if (!res.ok) {
-    throw new Error(data.error ?? `Submit failed: ${res.status}`);
+    throw new Error(data.error ?? 'Could not submit rating — please try again');
   }
 
   return data.ratings!;
@@ -48,13 +48,13 @@ export async function submitRating(
 
 export async function fetchStats(): Promise<StatsResponse> {
   const res = await fetch(`${BASE}/stats`);
-  if (!res.ok) throw new Error(`Stats fetch failed: ${res.status}`);
+  if (!res.ok) throw new Error('Could not load stats');
   return res.json() as Promise<StatsResponse>;
 }
 
 export async function fetchPubReviews(pubId: string): Promise<PubReviewsResponse> {
   const res = await fetch(`${BASE}/pubs/${encodeURIComponent(pubId)}/comments`);
-  if (!res.ok) throw new Error(`Reviews fetch failed: ${res.status}`);
+  if (!res.ok) throw new Error('Could not load reviews');
   return res.json() as Promise<PubReviewsResponse>;
 }
 
@@ -72,7 +72,7 @@ export function getOrCreateDeviceId(): string {
 
 export async function fetchVotes(deviceId: string): Promise<VotesResponse> {
   const res = await fetch(`${BASE}/votes?deviceId=${encodeURIComponent(deviceId)}`);
-  if (!res.ok) throw new Error(`Votes fetch failed: ${res.status}`);
+  if (!res.ok) throw new Error('Could not load votes');
   return res.json() as Promise<VotesResponse>;
 }
 
@@ -83,7 +83,7 @@ export async function castVote(pubId: string, deviceId: string): Promise<void> {
     body: JSON.stringify({ pubId, deviceId }),
   });
   const data = await res.json() as { error?: string };
-  if (!res.ok) throw new Error(data.error ?? `Vote failed: ${res.status}`);
+  if (!res.ok) throw new Error(data.error ?? 'Could not cast vote — please try again');
 }
 
 /** Remove this device’s vote for the current week (only your deviceId can do this). */
@@ -94,7 +94,7 @@ export async function clearVote(deviceId: string): Promise<void> {
     body: JSON.stringify({ deviceId, clear: true }),
   });
   const data = await res.json() as { error?: string };
-  if (!res.ok) throw new Error(data.error ?? `Could not clear vote: ${res.status}`);
+  if (!res.ok) throw new Error(data.error ?? 'Could not remove vote — please try again');
 }
 
 export async function castVeto(pubId: string, deviceId: string): Promise<void> {
@@ -104,7 +104,7 @@ export async function castVeto(pubId: string, deviceId: string): Promise<void> {
     body: JSON.stringify({ pubId, deviceId }),
   });
   const data = await res.json() as { error?: string };
-  if (!res.ok) throw new Error(data.error ?? `Veto failed: ${res.status}`);
+  if (!res.ok) throw new Error(data.error ?? 'Could not submit veto — please try again');
 }
 
 // ── Admin API ─────────────────────────────────────────────────────────────────
@@ -120,24 +120,43 @@ export function clearAdminToken(): void {
 }
 
 async function adminFetch(path: string, options: RequestInit = {}): Promise<{ res: Response; data: unknown }> {
+  const token = (getAdminToken() ?? '').replace(/[^\x20-\x7E]/g, '');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> | undefined),
+  };
+  // Only send Bearer when a token is stored; otherwise rely on Cloudflare Access cookies
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const res = await fetch(`/api/admin${path}`, {
     ...options,
-    headers: {
-      Authorization: `Bearer ${(getAdminToken() ?? '').replace(/[^\x20-\x7E]/g, '')}`,
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {}),
-    },
+    credentials: 'include',
+    headers,
   });
-  const data = await res.json();
-  if (res.status === 401) {
-    clearAdminToken();
-    throw new Error('Unauthorized — check your token');
+
+  const text = await res.text();
+  let data: unknown = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    // Access sometimes returns HTML login/challenge instead of JSON
+    if (res.redirected || text.includes('cloudflareaccess') || text.includes('Sign in')) {
+      throw new Error('Access session missing on API — protect /api/admin/* in the same Access app, then retry');
+    }
+    throw new Error(`Admin API returned non-JSON (${res.status})`);
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    if (token) clearAdminToken();
+    throw new Error('Unauthorized — Access JWT not accepted (check AUD / team domain) or use API token');
   }
   if (!res.ok) throw new Error((data as Record<string, string>).error ?? 'Request failed');
   return { res, data };
 }
 
-export async function adminAnnounce(body: { pubName?: string; force?: boolean } = {}): Promise<unknown> {
+export async function adminAnnounce(body: { pubName?: string; pubId?: string; force?: boolean } = {}): Promise<unknown> {
   const { data } = await adminFetch('/announce', { method: 'POST', body: JSON.stringify(body) });
   return data;
 }

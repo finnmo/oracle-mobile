@@ -1,7 +1,16 @@
+interface RateLimit {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface Env {
   DB: D1Database;
   ADMIN_API_TOKEN: string;
   ASSETS: Fetcher;
+  RATE_LIMITER: RateLimit;
+  /** e.g. https://yourteam.cloudflareaccess.com — optional for local Bearer-only admin */
+  CF_ACCESS_TEAM_DOMAIN?: string;
+  /** Access Application Audience (AUD) tag */
+  CF_ACCESS_AUD?: string;
 }
 
 export interface Pub {

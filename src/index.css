@@ -966,6 +966,15 @@ textarea::placeholder { color: var(--text-muted); }
   from { opacity: 0; }
   to { opacity: 1; }
 }
+.game-reveal {
+  animation: game-reveal 1.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: top center;
+  overflow: hidden;
+}
+@keyframes game-reveal {
+  from { transform: scaleY(0); opacity: 0; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
 .veto-modal {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1011,6 +1020,24 @@ textarea::placeholder { color: var(--text-muted); }
 }
 .admin-back-btn:hover { color: var(--text); }
 
+.admin-token-fallback {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.admin-token-fallback summary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.admin-token-fallback code {
+  font-size: 11px;
+  color: var(--accent);
+}
+
 .admin-logout-btn {
   position: absolute;
   top: 40px;
@@ -1043,6 +1070,10 @@ textarea::placeholder { color: var(--text-muted); }
   font-size: 14px;
   font-family: inherit;
   margin-bottom: 8px;
+}
+select.admin-input {
+  cursor: pointer;
+  appearance: auto;
 }
 .admin-input:focus {
   outline: 2px solid var(--accent);

@@ -51,11 +51,11 @@ export async function pickPubForWeek(env: Env, weekKey: string): Promise<string 
   if (pub) return pub;
 
   // ── 5. Last resort: any active pub ─────────────────────────────────────────
-  pub = await env.DB.prepare(
+  const anyPub = await env.DB.prepare(
     'SELECT id FROM pubs WHERE active = 1 ORDER BY RANDOM() LIMIT 1'
   ).first<{ id: string }>();
 
-  return pub?.id ?? null;
+  return anyPub?.id ?? null;
 }
 
 async function queryRandom(env: Env, excluded: string[]): Promise<string | null> {

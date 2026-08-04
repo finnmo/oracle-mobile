@@ -98,7 +98,12 @@ function createMockDb(data: {
 }
 
 function makeEnv(db: D1Database): Env {
-  return { DB: db, ADMIN_API_TOKEN: 'test', ASSETS: {} as Fetcher };
+  return {
+    DB: db,
+    ADMIN_API_TOKEN: 'test',
+    ASSETS: {} as Fetcher,
+    RATE_LIMITER: { limit: async () => ({ success: true }) },
+  };
 }
 
 describe('pickPubForWeek', () => {

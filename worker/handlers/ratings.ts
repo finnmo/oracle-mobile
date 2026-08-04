@@ -1,6 +1,7 @@
 import { Env } from '../types';
 import { json, error } from '../response';
 import { sha256 } from '../auth';
+import { isValidDeviceId } from '../utils/validate';
 
 interface RatingBody {
   roundId: string;
@@ -22,6 +23,10 @@ interface RatingStats {
 }
 
 export async function handleRatings(request: Request, env: Env): Promise<Response> {
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const { success } = await env.RATE_LIMITER.limit({ key: ip });
+  if (!success) return error('Too many requests', 429);
+
   let body: RatingBody;
   try {
     body = (await request.json()) as RatingBody;
@@ -36,6 +41,9 @@ export async function handleRatings(request: Request, env: Env): Promise<Respons
   }
   if (!Number.isInteger(score) || score < 1 || score > 5) {
     return error('score must be an integer between 1 and 5', 400);
+  }
+  if (comment !== undefined && (typeof comment !== 'string' || comment.length > 500)) {
+    return error('comment must be a string under 500 characters', 400);
   }
 
   const nowIso = new Date().toISOString();
@@ -57,13 +65,12 @@ export async function handleRatings(request: Request, env: Env): Promise<Respons
     return error('No pub has been chosen for this round', 400);
   }
 
-  const ip = request.headers.get('CF-Connecting-IP') ?? request.headers.get('X-Forwarded-For') ?? '';
-  const ipHash = ip ? await sha256(ip) : null;
-  const deviceHash = deviceId ? await sha256(deviceId) : null;
-
-  if (!deviceHash) {
-    return error('deviceId is required to submit a rating', 400);
+  if (!isValidDeviceId(deviceId)) {
+    return error('Invalid request', 400);
   }
+
+  const ipHash = ip ? await sha256(ip) : null;
+  const deviceHash = await sha256(deviceId);
 
   try {
     await env.DB.prepare(`

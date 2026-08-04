@@ -1,5 +1,41 @@
 import { describe, it, expect } from 'vitest';
-import { sha256 } from './auth';
+import { requireAdmin, sha256 } from './auth';
+import type { Env } from './types';
+
+function makeEnv(overrides: Partial<Env> = {}): Env {
+  return {
+    DB: {} as D1Database,
+    ADMIN_API_TOKEN: 'secret-token',
+    ASSETS: {} as Fetcher,
+    RATE_LIMITER: { limit: async () => ({ success: true }) },
+    ...overrides,
+  };
+}
+
+describe('requireAdmin Bearer', () => {
+  it('allows a matching Bearer token', async () => {
+    const req = new Request('https://example.com/api/admin/pubs', {
+      headers: { Authorization: 'Bearer secret-token' },
+    });
+    expect(await requireAdmin(req, makeEnv())).toBeNull();
+  });
+
+  it('rejects a wrong Bearer token', async () => {
+    const req = new Request('https://example.com/api/admin/pubs', {
+      headers: { Authorization: 'Bearer wrong' },
+    });
+    const res = await requireAdmin(req, makeEnv());
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(401);
+  });
+
+  it('rejects missing Authorization when Access is not configured', async () => {
+    const req = new Request('https://example.com/api/admin/pubs');
+    const res = await requireAdmin(req, makeEnv());
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(401);
+  });
+});
 
 describe('sha256()', () => {
   it('returns a 64-character lowercase hex string', async () => {

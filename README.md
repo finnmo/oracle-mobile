@@ -20,22 +20,22 @@ There is **no user login**. Each phone/browser gets a random **`deviceId`** in `
 
 ## Weekly schedule (Perth / UTC+8)
 
-Default week: **anchor = calendar Friday** in Perth. If that Friday is a **Western Australia public holiday**, the whole round moves to the **previous Thursday** (same local clock times: announce 11:45, meet 12:00, ratings open 12:20, ratings close 23:59 Perth on the calendar day after the anchor).
+Default week: **anchor = calendar Friday** in Perth. If that Friday is a **Western Australia public holiday**, the whole round moves to the **previous Thursday** (same local clock times: announce 10:00, meet 12:00, ratings open 12:20, ratings close 23:59 Perth on the calendar day after the anchor).
 
 WA holiday dates are listed in `worker/waPublicHolidays.ts` (sourced from [publicholidays.com.au/western-australia](https://publicholidays.com.au/western-australia/) and the [WA government site](https://www.wa.gov.au/service/employment/workplace-arrangements/public-holidays-western-australia); update yearly, especially 2028+).
 
 | Event         | Perth time (normal week) | UTC crons (see `wrangler.toml`) |
 |---------------|--------------------------|-----------------------------------|
-| Pub announced | Thu/Fri 11:45            | `45 3 * * 4,5` (Thu + Fri)        |
+| Pub announced | Thu/Fri **10:00**        | `0 2 * * THU,FRI`                 |
 | Meet time     | Thu/Fri 12:00            | *(display only)*                  |
-| Ratings open  | Thu/Fri 12:20            | `20 4 * * 4,5`                    |
-| Ratings close | Fri/Sat 23:59 Perth\*    | `59 15 * * 5,6`                   |
+| Ratings open  | Thu/Fri 12:20            | `20 4 * * THU,FRI`                |
+| Ratings close | Fri/Sat 23:59 Perth\*    | `59 15 * * FRI,SAT`               |
 
-(Combined weekday lists keep the Worker under Cloudflare’s per-script cron limit.)
+(Combined weekday lists keep the Worker under Cloudflare’s per-script cron limit. Use **weekday names** — Cloudflare numbers weekdays as 1=Sunday…7=Saturday, which differs from Unix cron.)
 
 \*Close is always `rateCloseAtUtc` in D1 (next calendar day after anchor at 15:59 UTC). Open/close cron handlers apply to **any** round whose timestamps have passed, so Thursday-anchor and Friday-anchor weeks both work.
 
-The cron jobs run automatically. The admin API can trigger any of these early.
+The cron jobs run automatically — the project is **self-contained**. The admin API (and web Admin page) can still trigger announce / open / close early if needed.
 
 ---
 
@@ -82,12 +82,42 @@ npx wrangler d1 execute oracle-db --local \
 npm run db:seed
 ```
 
-### 4. Set the admin secret
+### 4. Set admin secrets
 
 ```bash
+# Bearer token for curl / scripts / local dev (still required as fallback)
 npx wrangler secret put ADMIN_API_TOKEN
-# Enter a strong random string when prompted
+
+# After creating the Access app (see "Cloudflare Access" below):
+npx wrangler secret put CF_ACCESS_AUD
 ```
+
+Also set your team domain in `wrangler.toml` under `[vars]`:
+
+```toml
+CF_ACCESS_TEAM_DOMAIN = "https://YOURTEAM.cloudflareaccess.com"
+```
+
+---
+
+## Cloudflare Access (Admin UI)
+
+Admin lives at **`/admin`** (not a hash route) so Access can protect it.
+
+1. **Zero Trust** → **Access** → **Applications** → add a **Self-hosted** app for `picker.example.com`.
+2. Protect only these paths (do **not** protect all of `/api` — that locks voting/status behind Access and breaks the public app):
+   - `picker.example.com/admin`
+   - `picker.example.com/admin/*`
+   - `picker.example.com/api/admin`
+   - `picker.example.com/api/admin/*`
+3. Enable **Google** as an identity provider.
+4. Policy: **Allow** when the user’s email is in your allowlist (and/or matches your Google Workspace domain).
+5. Copy the **Application Audience (AUD) Tag** and set `CF_ACCESS_AUD` via `wrangler secret put`.
+6. Set `CF_ACCESS_TEAM_DOMAIN` in `[vars]` as above, then `npm run deploy`.
+
+Public pages and APIs (`/`, `/api/status`, `/api/votes`, etc.) stay unprotected.
+
+**Login UX:** open `https://picker.example.com/admin` → Google via Access. The Admin page probes `/api/admin/pubs` using the Access session cookie. Bearer token login remains under “Use API token instead” for emergencies and local wrangler (Access vars unset → Bearer only).
 
 ---
 
@@ -103,7 +133,7 @@ npm run dev:worker
 npm run dev:ui
 ```
 
-Open http://localhost:5173
+Open http://localhost:5173 — Admin at http://localhost:5173/admin (Bearer token; Access only applies on the production hostname).
 
 ---
 
@@ -119,7 +149,11 @@ Builds the frontend then deploys Worker + assets to Cloudflare. Cron triggers ar
 
 ## Admin API
 
-All admin endpoints require:
+Admin endpoints accept **either**:
+
+1. Cloudflare Access JWT (`Cf-Access-Jwt-Assertion` — set automatically for browser requests after Access login), or
+2. Bearer token:
+
 ```
 Authorization: Bearer <ADMIN_API_TOKEN>
 ```
@@ -217,14 +251,17 @@ curl -X PATCH "$BASE/api/admin/pubs/pub-001" \
 
 ---
 
-## Python integration
+## Admin API (optional scripting)
+
+> Announce runs automatically via cron at **10:00 Perth** on Friday (or Thursday when Friday is a WA public holiday).
+> Prefer **`/admin`** with Google via Cloudflare Access. Bearer token helpers below remain for curl / rare overrides.
 
 ```python
 import os
 import requests
 
 TOKEN = os.environ["ORACLE_ADMIN_TOKEN"]
-BASE  = "https://your-worker.workers.dev"
+BASE  = "https://picker.example.com"
 
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
@@ -248,7 +285,7 @@ def announce(pub_name: str | None = None, pub_id: str | None = None, force: bool
 
 
 def reset() -> dict:
-    """Clear the current announcement so the cron picks a fresh pub on Friday."""
+    """Clear the current announcement so the cron picks a fresh pub on the next announce day."""
     r = requests.post(f"{BASE}/api/admin/reset", headers=HEADERS)
     r.raise_for_status()
     return r.json()
@@ -290,23 +327,6 @@ def delete_pub(pub_id: str) -> dict:
     r = requests.delete(f"{BASE}/api/admin/pubs/{pub_id}", headers=HEADERS)
     r.raise_for_status()
     return r.json()  # {"ok": true, "action": "deleted" | "deactivated"}
-
-
-# ── Usage examples ────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    # Announce a specific pub right now (shows on frontend immediately)
-    result = announce(pub_name="The Como")
-    print(result["pub"]["name"])
-
-    # Force a fresh random pick
-    announce(force=True)
-
-    # Change the pub after the initial announcement
-    announce(pub_name="Baillie Hill")
-
-    # Reset so cron picks on the next announce day
-    reset()
 ```
 
 ---
@@ -338,7 +358,7 @@ oracle-mobile/
 │   ├── timeUtils.ts          Perth anchor + round timestamps
 │   ├── waPublicHolidays.ts   WA public holiday dates (Thu shift when Fri is PH)
 │   ├── response.ts           JSON/CORS helpers
-│   ├── auth.ts               Bearer auth + SHA-256
+│   ├── auth.ts               Admin: Access JWT + Bearer; SHA-256
 │   ├── handlers/
 │   │   ├── status.ts         GET /api/status
 │   │   ├── ratings.ts        POST /api/ratings

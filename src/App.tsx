@@ -10,26 +10,27 @@ import HistorySection from './components/HistorySection';
 import StatsDrawer from './components/StatsDrawer';
 import VotingSection from './components/VotingSection';
 import AdminPage from './components/AdminPage';
+import PubCrawlGame from './components/PubCrawlGame';
 
 const POLL_INTERVAL_MS = 30_000; // fallback polling interval when SSE is active
 
-// ── Simple hash-based routing ─────────────────────────────────────────────────
+// ── Path-based routing (Access can protect /admin; hashes cannot) ─────────────
 
-function useHashRoute() {
-  const [hash, setHash] = useState(window.location.hash);
+function usePathname() {
+  const [pathname, setPathname] = useState(window.location.pathname);
   useEffect(() => {
-    const handler = () => setHash(window.location.hash);
-    window.addEventListener('hashchange', handler);
-    return () => window.removeEventListener('hashchange', handler);
+    const onPop = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
   }, []);
-  return hash;
+  return pathname;
 }
 
 export default function App() {
-  const hash = useHashRoute();
+  const pathname = usePathname();
 
-  if (hash === '#admin') {
-    return <AdminPage onBack={() => { window.location.hash = ''; }} />;
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    return <AdminPage onBack={() => { window.location.href = '/'; }} />;
   }
 
   return <MainApp />;
@@ -44,6 +45,7 @@ function MainApp() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [pubNames, setPubNames] = useState<string[]>([]);
   const [revealing, setRevealing] = useState(false);
+  const [gameOpen, setGameOpen] = useState(false);
 
   const confettiFiredRef = useRef(false);
   const lastRoundIdRef = useRef<string | null>(null);
@@ -126,6 +128,7 @@ function MainApp() {
       .catch(() => {});
   }, []);
 
+
   // Reset confetti flag when round changes
   useEffect(() => {
     const roundId = status?.round?.id ?? null;
@@ -157,15 +160,20 @@ function MainApp() {
   return (
     <div className="app">
       <header className="header">
-        <h1>Oracle</h1>
+        <h1 onClick={() => {
+          const now = Date.now();
+          const key = '__ot';
+          const raw = sessionStorage.getItem(key);
+          const { count, ts } = raw ? JSON.parse(raw) as { count: number; ts: number } : { count: 0, ts: 0 };
+          const next = now - ts < 1500 ? count + 1 : 1;
+          if (next >= 5) { sessionStorage.removeItem(key); setGameOpen(v => !v); }
+          else sessionStorage.setItem(key, JSON.stringify({ count: next, ts: now }));
+        }}>Oracle</h1>
         <p>🍺🍗🍷🥩 Pub of the Week</p>
         <nav className="header-nav">
-          <button
-            className="btn btn-secondary header-admin-btn"
-            onClick={() => { window.location.hash = 'admin'; }}
-          >
+          <a className="btn btn-secondary header-admin-btn" href="/admin">
             Admin
-          </button>
+          </a>
           <button className="hamburger" onClick={() => setMenuOpen(true)} aria-label="Open stats">
             <span /><span /><span />
           </button>
@@ -175,6 +183,8 @@ function MainApp() {
       <StatsDrawer open={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <main>
+        {gameOpen && <PubCrawlGame pubs={pubNames} onClose={() => setGameOpen(false)} />}
+
         {loading && !status && (
           <div className="card loading-card">
             <div className="spinner" />

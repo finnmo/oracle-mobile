@@ -2,6 +2,7 @@ import { Env } from '../types';
 import { json, error } from '../response';
 import { sha256 } from '../auth';
 import { getVoteAndRoundAnchorPerthYmd } from '../timeUtils';
+import { isValidDeviceId } from '../utils/validate';
 
 /** One vote per device per week (hashed). No IP limits — shared Wi‑Fi is normal. */
 interface VoteBody {
@@ -100,6 +101,10 @@ async function getVotes(request: Request, env: Env): Promise<Response> {
 // ── POST /api/votes ────────────────────────────────────────────────────────
 
 async function castVote(request: Request, env: Env): Promise<Response> {
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const { success } = await env.RATE_LIMITER.limit({ key: ip });
+  if (!success) return error('Too many requests', 429);
+
   let body: VoteBody;
   try {
     body = (await request.json()) as VoteBody;
@@ -108,7 +113,7 @@ async function castVote(request: Request, env: Env): Promise<Response> {
   }
 
   const { pubId, deviceId, clear } = body;
-  if (!deviceId) return error('deviceId is required', 400);
+  if (!isValidDeviceId(deviceId)) return error('Invalid request', 400);
 
   const nowUtc = new Date();
   const weekKey = getVoteAndRoundAnchorPerthYmd(nowUtc);
@@ -134,7 +139,7 @@ async function castVote(request: Request, env: Env): Promise<Response> {
     return json({ ok: true, weekKey, cleared: true });
   }
 
-  if (!pubId) return error('pubId is required unless clear is true', 400);
+  if (!pubId) return error('pubId is required', 400);
 
   const pub = await env.DB.prepare(
     'SELECT id FROM pubs WHERE id = ? AND active = 1'

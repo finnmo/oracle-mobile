@@ -89,12 +89,12 @@ function collectPotentialAnchorTimingsInRange(
 
 /**
  * Timestamps for a round whose anchor calendar day in Perth is `anchorPerthYmd`
- * (Thursday or Friday as above). Local meaning: 11:45 / 12:00 / 12:20 Perth on that day;
+ * (Thursday or Friday as above). Local meaning: 10:00 / 12:00 / 12:20 Perth on that day;
  * ratings close at 23:59 Perth on the following calendar day.
  */
 export function computeRoundTimingsFromAnchorYmd(anchorPerthYmd: string): RoundTimings {
   const weekKey = anchorPerthYmd;
-  const announceAtUtc = `${weekKey}T03:45:00.000Z`;
+  const announceAtUtc = `${weekKey}T02:00:00.000Z`;
   const meetAtUtc = `${weekKey}T04:00:00.000Z`;
   const rateOpenAtUtc = `${weekKey}T04:20:00.000Z`;
 
@@ -145,7 +145,7 @@ export function getNextRoundTimings(now: Date): RoundTimings {
 }
 
 /**
- * Cron at Thu/Fri 03:45 UTC: return anchor YYYY-MM-DD to announce, or null to skip.
+ * Cron at Thu/Fri 02:00 UTC (10:00 Perth): return anchor YYYY-MM-DD to announce, or null to skip.
  */
 export function tryResolveCronAnnounceAnchorPerthYmd(now: Date): string | null {
   const todayYmd = perthYmd(now);

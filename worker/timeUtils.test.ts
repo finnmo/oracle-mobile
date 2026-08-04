@@ -91,7 +91,7 @@ describe('computeRoundTimingsFromAnchorYmd', () => {
   it('produces correct UTC timestamps for a Friday anchor', () => {
     const t = computeRoundTimingsFromAnchorYmd('2026-03-27');
     expect(t.weekKey).toBe('2026-03-27');
-    expect(t.announceAtUtc).toBe('2026-03-27T03:45:00.000Z');
+    expect(t.announceAtUtc).toBe('2026-03-27T02:00:00.000Z');
     expect(t.meetAtUtc).toBe('2026-03-27T04:00:00.000Z');
     expect(t.rateOpenAtUtc).toBe('2026-03-27T04:20:00.000Z');
     expect(t.rateCloseAtUtc).toBe('2026-03-28T15:59:00.000Z');
@@ -101,7 +101,7 @@ describe('computeRoundTimingsFromAnchorYmd', () => {
     // Good Friday 2026 = 2026-04-03 (PH), so anchor is Thursday 2026-04-02
     const t = computeRoundTimingsFromAnchorYmd('2026-04-02');
     expect(t.weekKey).toBe('2026-04-02');
-    expect(t.announceAtUtc).toBe('2026-04-02T03:45:00.000Z');
+    expect(t.announceAtUtc).toBe('2026-04-02T02:00:00.000Z');
     expect(t.meetAtUtc).toBe('2026-04-02T04:00:00.000Z');
     expect(t.rateOpenAtUtc).toBe('2026-04-02T04:20:00.000Z');
     expect(t.rateCloseAtUtc).toBe('2026-04-03T15:59:00.000Z');
@@ -142,29 +142,29 @@ describe('isPotentialRoundAnchorPerthYmd', () => {
 
 describe('tryResolveCronAnnounceAnchorPerthYmd', () => {
   it('returns Thursday anchor when cron fires Thursday before Good Friday 2026', () => {
-    // Thu 2026-04-02 03:45 UTC = Thu 11:45 Perth
-    const now = new Date('2026-04-02T03:45:00Z');
+    // Thu 2026-04-02 02:00 UTC = Thu 10:00 Perth
+    const now = new Date('2026-04-02T02:00:00Z');
     expect(tryResolveCronAnnounceAnchorPerthYmd(now)).toBe('2026-04-02');
   });
 
   it('returns null on Good Friday 2026 (Friday is a PH, skip)', () => {
-    const now = new Date('2026-04-03T03:45:00Z');
+    const now = new Date('2026-04-03T02:00:00Z');
     expect(tryResolveCronAnnounceAnchorPerthYmd(now)).toBeNull();
   });
 
   it('returns the Friday anchor on a normal Friday', () => {
-    // Fri 2026-03-27 03:45 UTC
-    const now = new Date('2026-03-27T03:45:00Z');
+    // Fri 2026-03-27 02:00 UTC
+    const now = new Date('2026-03-27T02:00:00Z');
     expect(tryResolveCronAnnounceAnchorPerthYmd(now)).toBe('2026-03-27');
   });
 
   it('returns null on a normal Thursday (Friday is not a PH)', () => {
-    const now = new Date('2026-03-26T03:45:00Z');
+    const now = new Date('2026-03-26T02:00:00Z');
     expect(tryResolveCronAnnounceAnchorPerthYmd(now)).toBeNull();
   });
 
   it('returns null on a Wednesday', () => {
-    const now = new Date('2026-04-01T03:45:00Z');
+    const now = new Date('2026-04-01T02:00:00Z');
     expect(tryResolveCronAnnounceAnchorPerthYmd(now)).toBeNull();
   });
 });
@@ -204,7 +204,7 @@ describe('getNextRoundTimings', () => {
   it('returns Thursday-anchor timings during a PH week', () => {
     const t = getNextRoundTimings(new Date('2026-03-30T10:00:00Z'));
     expect(t.weekKey).toBe('2026-04-02');
-    expect(t.announceAtUtc).toBe('2026-04-02T03:45:00.000Z');
+    expect(t.announceAtUtc).toBe('2026-04-02T02:00:00.000Z');
   });
 
   it('returns this round while still in rating window', () => {
@@ -272,8 +272,8 @@ describe('getVoteAndRoundAnchorPerthYmd edge cases', () => {
   });
 
   it('during announce window targets current round', () => {
-    // Fri 2026-03-27 03:50 UTC — between announce (03:45) and rateClose
-    expect(getVoteAndRoundAnchorPerthYmd(new Date('2026-03-27T03:50:00Z'))).toBe('2026-03-27');
+    // Fri 2026-03-27 02:05 UTC — between announce (02:00) and rateClose
+    expect(getVoteAndRoundAnchorPerthYmd(new Date('2026-03-27T02:05:00Z'))).toBe('2026-03-27');
   });
 });
 

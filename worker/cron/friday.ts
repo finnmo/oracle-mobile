@@ -5,13 +5,16 @@ import {
 } from '../timeUtils';
 import { pickPubForWeek } from '../utils/pubPicker';
 
-/** Cron strings registered in wrangler.toml (UTC; comma = Thu+Fri or Fri+Sat). */
-export const CRON_ANNOUNCE = '45 3 * * 4,5';
-export const CRON_OPEN_RATINGS = '20 4 * * 4,5';
-export const CRON_CLOSE_RATINGS = '59 15 * * 5,6';
+/** Cron strings registered in wrangler.toml (UTC; weekday names — Cloudflare 1=Sun). */
+export const CRON_ANNOUNCE = '0 2 * * THU,FRI';
+export const CRON_OPEN_RATINGS = '20 4 * * THU,FRI';
+export const CRON_CLOSE_RATINGS = '59 15 * * FRI,SAT';
 
 export async function handleCron(event: ScheduledEvent, env: Env): Promise<void> {
   const now = new Date(event.scheduledTime);
+
+  // Run on every cron so a missed CRON_CLOSE_RATINGS firing is caught by the next announce/open cron.
+  await closeRatings(now, env);
 
   switch (event.cron) {
     case CRON_ANNOUNCE:
@@ -21,7 +24,7 @@ export async function handleCron(event: ScheduledEvent, env: Env): Promise<void>
       await openRatings(now, env);
       break;
     case CRON_CLOSE_RATINGS:
-      await closeRatings(now, env);
+      // already handled above
       break;
     default:
       console.warn(`Unhandled cron expression: ${event.cron}`);

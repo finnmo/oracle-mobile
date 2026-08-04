@@ -51,6 +51,19 @@ export default {
       }
     }
 
+    // Serve SPA shell for /admin without redirecting the browser to / or /index.html
+    // (a Location redirect would make "Admin" look like a home-page refresh).
+    if ((path === '/admin' || path.startsWith('/admin/')) && (method === 'GET' || method === 'HEAD')) {
+      const assetRes = await env.ASSETS.fetch(new URL('/index.html', url.origin));
+      const headers = new Headers(assetRes.headers);
+      headers.delete('Location');
+      return new Response(assetRes.body, {
+        status: 200,
+        statusText: 'OK',
+        headers,
+      });
+    }
+
     // Serve static frontend assets
     return env.ASSETS.fetch(request);
   },
