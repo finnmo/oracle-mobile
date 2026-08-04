@@ -14,7 +14,7 @@ export async function handleEvents(_req: Request, env: Env): Promise<Response> {
     try {
       for (let i = 0; i < 5; i++) {
         const status = await buildStatus(env);
-        const key = `${status.state}:${(status.round as { id?: string }).id ?? ''}:${(status.round as { pub?: { id?: string } }).pub?.id ?? ''}`;
+        const key = `${status.state}:${(status.round as { id?: string }).id ?? ''}:${(status.round as { pub?: { id?: string } }).pub?.id ?? ''}:${(status.round as { chosenAtUtc?: string }).chosenAtUtc ?? ''}`;
 
         if (key !== lastKey) {
           lastKey = key;

@@ -48,8 +48,8 @@ function MainApp() {
   const [revealing, setRevealing] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
 
-  const revealDoneRef = useRef(false);
-  const lastRevealKeyRef = useRef<string | null>(null);
+  const revealKeyRef = useRef<string | null>(null);
+  const prevStateRef = useRef<string | null>(null);
   const [pubsReady, setPubsReady] = useState(false);
   const [justRevealed, setJustRevealed] = useState(false);
 
@@ -128,52 +128,56 @@ function MainApp() {
     fetch('/api/pubs')
       .then((r) => r.json())
       .then((d: { pubs: { name: string }[] }) => {
-        setPubNames(d.pubs.map((p) => p.name));
+        setPubNames((d.pubs ?? []).map((p) => p.name));
         setPubsReady(true);
       })
       .catch(() => setPubsReady(true));
   }, []);
 
-  // Reset reveal when round or chosen pub changes (e.g. admin re-announce)
+  // Celebrate when we enter "announced", or when admin re-picks (chosenAtUtc / pub changes).
+  // No sessionStorage — refresh and live SSE transitions both get the show.
   useEffect(() => {
-    const roundId = status?.round?.id ?? null;
-    const pubId = status?.round?.pub?.id ?? null;
-    const key = roundId && pubId ? `${roundId}:${pubId}` : null;
-    if (!key || key === lastRevealKeyRef.current) return;
+    const state = status?.state ?? null;
+    const round = status?.round;
+    const pub = round?.pub ?? null;
+    const prevState = prevStateRef.current;
+    prevStateRef.current = state;
 
-    lastRevealKeyRef.current = key;
-    const seen = sessionStorage.getItem(`oracle_reveal_v2_${key}`) === '1';
-    revealDoneRef.current = seen;
-    setRevealing(false);
-    setJustRevealed(false);
-  }, [status?.round?.id, status?.round?.pub?.id]);
+    if (state !== 'announced' || !round || !pub || !pubsReady || revealing) return;
 
-  // Start the celebration once pubs are loaded (avoids skipping the slot when names arrive late)
-  useEffect(() => {
-    if (status?.state !== 'announced' || !status.round.pub || !pubsReady || revealDoneRef.current) {
-      return;
-    }
+    const revealKey = [round.id ?? '', pub.id, round.chosenAtUtc ?? ''].join(':');
+
+    const liveTransition = prevState !== null && prevState !== 'announced';
+    const alreadyPlayedThisPick = revealKeyRef.current === revealKey;
+
+    // Skip only if we already played this exact pick in this tab, and this isn't a
+    // live countdown→announced transition.
+    if (alreadyPlayedThisPick && !liveTransition) return;
+
     if (pubNames.length > 1) {
+      revealKeyRef.current = revealKey;
+      setJustRevealed(false);
       setRevealing(true);
       return;
     }
-    // Degenerate pool — still celebrate
-    revealDoneRef.current = true;
-    const key = `${status.round.id}:${status.round.pub.id}`;
-    sessionStorage.setItem(`oracle_reveal_v2_${key}`, '1');
+
+    // Empty pool (shouldn't happen) — confetti only
+    revealKeyRef.current = revealKey;
     setJustRevealed(true);
     fireAnnounceCelebration();
-  }, [status?.state, status?.round?.id, status?.round?.pub, pubsReady, pubNames.length]);
+  }, [
+    status?.state,
+    status?.round,
+    pubsReady,
+    pubNames.length,
+    revealing,
+  ]);
 
   const handleRevealComplete = useCallback(() => {
     setRevealing(false);
     setJustRevealed(true);
-    revealDoneRef.current = true;
-    const roundId = status?.round?.id;
-    const pubId = status?.round?.pub?.id;
-    if (roundId && pubId) sessionStorage.setItem(`oracle_reveal_v2_${roundId}:${pubId}`, '1');
     fireAnnounceCelebration();
-  }, [status?.round?.id, status?.round?.pub?.id]);
+  }, []);
 
   return (
     <div className="app">

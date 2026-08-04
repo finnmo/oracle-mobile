@@ -16,15 +16,19 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishedRef = useRef(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
+  const finalName = finalPub.name;
 
   const finish = useCallback(() => {
     if (finishedRef.current) return;
     finishedRef.current = true;
     if (timerRef.current) clearTimeout(timerRef.current);
-    setDisplayName(finalPub.name);
+    setDisplayName(finalName);
     setPhase('landed');
-    completeTimerRef.current = setTimeout(onComplete, 900);
-  }, [finalPub.name, onComplete]);
+    completeTimerRef.current = setTimeout(() => onCompleteRef.current(), 900);
+  }, [finalName]);
 
   // Intro beat, then spin
   useEffect(() => {
@@ -32,16 +36,15 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
     return () => clearTimeout(t);
   }, []);
 
-  // Name reel
+  // Name reel — deps are stable strings/arrays so SSE status churn won't restart mid-spin
   useEffect(() => {
     if (phase !== 'spinning') return;
 
     const names = [...allPubNames].sort(() => Math.random() - 0.5);
-    if (!names.includes(finalPub.name)) names.push(finalPub.name);
-    // Guarantee final name isn't sitting near the start of the shuffle
-    const pool = names.filter((n) => n !== finalPub.name);
+    if (!names.includes(finalName)) names.push(finalName);
+    const pool = names.filter((n) => n !== finalName);
     while (pool.length < 8) pool.push(...names);
-    const sequence = [...pool.slice(0, 14), finalPub.name];
+    const sequence = [...pool.slice(0, 14), finalName];
 
     let idx = 0;
     let delay = 55;
@@ -61,7 +64,6 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
       idx++;
 
       const progress = elapsed / totalDuration;
-      // ease out: fast blur → slow suspense
       delay = 55 + progress * progress * 420;
       timerRef.current = setTimeout(tick, delay);
     }
@@ -71,7 +73,7 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [phase, finalPub, allPubNames, finish]);
+  }, [phase, finalName, allPubNames, finish]);
 
   useEffect(() => {
     return () => {
@@ -88,7 +90,7 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
       className={`announce-reveal announce-reveal--${phase}`}
       role="button"
       tabIndex={0}
-      aria-label={phase === 'landed' ? finalPub.name : 'Revealing pub — tap to skip'}
+      aria-label={phase === 'landed' ? finalName : 'Revealing pub — tap to skip'}
       aria-live="polite"
       onClick={skip}
       onKeyDown={(e) => {

@@ -15,6 +15,8 @@ export interface Round {
   rateOpenAtUtc: string;
   rateCloseAtUtc: string;
   status: string | null;
+  /** When the pub was chosen (API/cron); changes on re-announce. */
+  chosenAtUtc?: string | null;
   pub: Pub | null;
 }
 

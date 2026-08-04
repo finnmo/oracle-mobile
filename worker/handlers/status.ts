@@ -81,6 +81,7 @@ export async function buildStatus(env: Env): Promise<StatusPayload> {
       rateOpenAtUtc: row.rateOpenAtUtc,
       rateCloseAtUtc: row.rateCloseAtUtc,
       status: row.status,
+      chosenAtUtc: row.chosenAtUtc,
       pub: hasPub
         ? {
             id: row.chosenPubId,
@@ -102,6 +103,7 @@ export async function buildStatus(env: Env): Promise<StatusPayload> {
       rateOpenAtUtc: timings.rateOpenAtUtc,
       rateCloseAtUtc: timings.rateCloseAtUtc,
       status: null,
+      chosenAtUtc: null,
       pub: null,
     };
   }
