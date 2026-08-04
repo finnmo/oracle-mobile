@@ -1593,6 +1593,117 @@ textarea::placeholder { color: var(--text-muted); }
   line-height: 1.5;
 }
 
+/* ── Oracle thinking (T−30s before announce) ──────────────────────────────── */
+.oracle-thinking {
+  position: relative;
+  text-align: center;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(232, 212, 184, 0.28), transparent 55%),
+    var(--header-bg);
+  color: var(--header-fg);
+  padding: 36px 20px 28px;
+  box-shadow: var(--overlay-lift);
+  border: 1px solid rgba(232, 212, 184, 0.28);
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
+}
+.oracle-thinking-rings {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 0;
+}
+.oracle-thinking-rings span {
+  position: absolute;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(232, 212, 184, 0.35);
+  animation: oracle-ring 2.4s ease-out infinite;
+}
+.oracle-thinking-rings span:nth-child(2) { animation-delay: 0.8s; }
+.oracle-thinking-rings span:nth-child(3) { animation-delay: 1.6s; }
+.oracle-thinking--deciding .oracle-thinking-rings span {
+  border-color: rgba(232, 212, 184, 0.55);
+  animation-duration: 1.4s;
+}
+.oracle-thinking-mark {
+  position: relative;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  color: var(--timber);
+  animation: announce-mark-bob 1.2s ease-in-out infinite;
+}
+.oracle-thinking-title {
+  position: relative;
+  z-index: 1;
+  margin-top: 16px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--timber);
+  animation: announce-eyebrow-pulse 1.6s ease-in-out infinite;
+}
+.oracle-thinking-count {
+  position: relative;
+  z-index: 1;
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.oracle-thinking-sec {
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--header-fg);
+  font-variant-numeric: tabular-nums;
+  animation: oracle-sec-pop 0.35s ease;
+}
+.oracle-thinking-sec-label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(247, 243, 234, 0.55);
+}
+.oracle-thinking-sub {
+  position: relative;
+  z-index: 1;
+  margin-top: 14px;
+  font-size: 14px;
+  color: rgba(247, 243, 234, 0.65);
+}
+
+@keyframes oracle-ring {
+  0%   { transform: scale(0.55); opacity: 0.7; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes oracle-sec-pop {
+  from { transform: scale(1.12); opacity: 0.5; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oracle-thinking-rings span,
+  .oracle-thinking-mark,
+  .oracle-thinking-title,
+  .oracle-thinking-sec {
+    animation: none !important;
+  }
+}
+
 /* ── Announce reveal (slot celebration) ───────────────────────────────────── */
 .announce-reveal {
   position: relative;

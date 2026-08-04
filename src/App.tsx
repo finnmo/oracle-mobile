@@ -12,8 +12,10 @@ import { BenchIcon, ChartIcon } from './components/PubIcons';
 import VotingSection from './components/VotingSection';
 import AdminPage from './components/AdminPage';
 import PubCrawlGame from './components/PubCrawlGame';
+import OracleThinking from './components/OracleThinking';
 
 const POLL_INTERVAL_MS = 30_000; // fallback polling interval when SSE is active
+const THINKING_WINDOW_MS = 30_000;
 
 // ── Path-based routing (Access can protect /admin; hashes cannot) ─────────────
 
@@ -50,8 +52,10 @@ function MainApp() {
 
   const revealKeyRef = useRef<string | null>(null);
   const prevStateRef = useRef<string | null>(null);
+  const thinkingArmedRef = useRef(false);
   const [pubsReady, setPubsReady] = useState(false);
   const [justRevealed, setJustRevealed] = useState(false);
+  const [fromThinking, setFromThinking] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -134,8 +138,27 @@ function MainApp() {
       .catch(() => setPubsReady(true));
   }, []);
 
+  // Near announce time: poll every second so we catch cron + kick the reel promptly
+  useEffect(() => {
+    if (status?.state !== 'countdown_announce' || !status.round?.announceAtUtc) return;
+
+    const announceMs = new Date(status.round.announceAtUtc).getTime();
+    const offset = new Date(status.serverNowUtc).getTime() - Date.now();
+
+    const tick = () => {
+      const left = announceMs - (Date.now() + offset);
+      if (left <= THINKING_WINDOW_MS && left > -90_000) {
+        thinkingArmedRef.current = true;
+        void load();
+      }
+    };
+
+    tick();
+    const id = setInterval(tick, 1_000);
+    return () => clearInterval(id);
+  }, [status?.state, status?.round?.announceAtUtc, status?.serverNowUtc, load]);
+
   // Celebrate when we enter "announced", or when admin re-picks (chosenAtUtc / pub changes).
-  // No sessionStorage — refresh and live SSE transitions both get the show.
   useEffect(() => {
     const state = status?.state ?? null;
     const round = status?.round;
@@ -150,20 +173,20 @@ function MainApp() {
     const liveTransition = prevState !== null && prevState !== 'announced';
     const alreadyPlayedThisPick = revealKeyRef.current === revealKey;
 
-    // Skip only if we already played this exact pick in this tab, and this isn't a
-    // live countdown→announced transition.
     if (alreadyPlayedThisPick && !liveTransition) return;
 
     if (pubNames.length > 1) {
       revealKeyRef.current = revealKey;
       setJustRevealed(false);
+      setFromThinking(thinkingArmedRef.current || liveTransition);
+      thinkingArmedRef.current = false;
       setRevealing(true);
       return;
     }
 
-    // Empty pool (shouldn't happen) — confetti only
     revealKeyRef.current = revealKey;
     setJustRevealed(true);
+    thinkingArmedRef.current = false;
     fireAnnounceCelebration();
   }, [
     status?.state,
@@ -176,6 +199,7 @@ function MainApp() {
   const handleRevealComplete = useCallback(() => {
     setRevealing(false);
     setJustRevealed(true);
+    setFromThinking(false);
     fireAnnounceCelebration();
   }, []);
 
@@ -242,6 +266,7 @@ function MainApp() {
               onRefresh={load}
               revealing={revealing}
               justRevealed={justRevealed}
+              fromThinking={fromThinking}
               pubNames={pubNames}
               onRevealComplete={handleRevealComplete}
             />
@@ -269,23 +294,62 @@ interface StatusViewProps {
   onRefresh: () => void;
   revealing: boolean;
   justRevealed: boolean;
+  fromThinking: boolean;
   pubNames: string[];
   onRevealComplete: () => void;
 }
 
-function StatusView({ status, onRefresh, revealing, justRevealed, pubNames, onRevealComplete }: StatusViewProps) {
+function useMsUntil(targetUtc: string, serverNowUtc: string): number | null {
+  const offsetRef = useRef(0);
+  const [msLeft, setMsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    offsetRef.current = new Date(serverNowUtc).getTime() - Date.now();
+  }, [serverNowUtc]);
+
+  useEffect(() => {
+    const targetMs = new Date(targetUtc).getTime();
+    const tick = () => setMsLeft(targetMs - (Date.now() + offsetRef.current));
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [targetUtc, serverNowUtc]);
+
+  return msLeft;
+}
+
+function StatusView({
+  status,
+  onRefresh,
+  revealing,
+  justRevealed,
+  fromThinking,
+  pubNames,
+  onRevealComplete,
+}: StatusViewProps) {
   const { state, round, ratings, serverNowUtc } = status;
+  const msUntilAnnounce = useMsUntil(round.announceAtUtc, serverNowUtc);
+  const inThinkingWindow =
+    state === 'countdown_announce' &&
+    msUntilAnnounce !== null &&
+    msUntilAnnounce <= THINKING_WINDOW_MS;
 
   return (
     <div className="status-stack">
       {state === 'countdown_announce' && (
         <>
-          <CountdownTimer
-            targetUtc={round.announceAtUtc}
-            serverNowUtc={serverNowUtc}
-            label="Announce"
-          />
-          <VotingSection />
+          {inThinkingWindow ? (
+            <OracleThinking
+              secondsLeft={Math.max(0, Math.ceil((msUntilAnnounce ?? 0) / 1000))}
+            />
+          ) : (
+            <CountdownTimer
+              targetUtc={round.announceAtUtc}
+              serverNowUtc={serverNowUtc}
+              label="Announce"
+            />
+          )}
+          {!inThinkingWindow && <VotingSection />}
         </>
       )}
 
@@ -296,6 +360,7 @@ function StatusView({ status, onRefresh, revealing, justRevealed, pubNames, onRe
               finalPub={round.pub}
               allPubNames={pubNames}
               onComplete={onRevealComplete}
+              skipIntro={fromThinking}
             />
           ) : (
             <PubCard pub={round.pub} showBadge celebrate={justRevealed} />

@@ -6,12 +6,14 @@ interface Props {
   finalPub: Pub;
   allPubNames: string[];
   onComplete: () => void;
+  /** Skip the intro beat when we already built suspense with "thinking". */
+  skipIntro?: boolean;
 }
 
 type Phase = 'intro' | 'spinning' | 'landed';
 
-export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props) {
-  const [phase, setPhase] = useState<Phase>('intro');
+export default function SlotReveal({ finalPub, allPubNames, onComplete, skipIntro = false }: Props) {
+  const [phase, setPhase] = useState<Phase>(skipIntro ? 'spinning' : 'intro');
   const [displayName, setDisplayName] = useState('');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -30,13 +32,14 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete }: Props)
     completeTimerRef.current = setTimeout(() => onCompleteRef.current(), 900);
   }, [finalName]);
 
-  // Intro beat, then spin
+  // Intro beat, then spin (unless skipIntro)
   useEffect(() => {
+    if (skipIntro) return;
     const t = setTimeout(() => setPhase('spinning'), 1100);
     return () => clearTimeout(t);
-  }, []);
+  }, [skipIntro]);
 
-  // Name reel — deps are stable strings/arrays so SSE status churn won't restart mid-spin
+  // Name reel — stable deps so SSE status churn won't restart mid-spin
   useEffect(() => {
     if (phase !== 'spinning') return;
 
