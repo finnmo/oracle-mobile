@@ -14,6 +14,9 @@ import { handleAdminReset } from './handlers/admin/reset';
 import { handleStats } from './handlers/stats';
 import { handlePubComments } from './handlers/pub-comments';
 import { handleEvents } from './handlers/events';
+import { handleBranding } from './handlers/branding';
+import { handleAdminBranding } from './handlers/admin/branding';
+import { serveAdminShell } from './adminShell';
 import { handleCron } from './cron/friday';
 
 export default {
@@ -33,6 +36,7 @@ export default {
         if (path === '/api/pubs'                 && method === 'GET')  return handlePubs(request, env);
         if (path === '/api/rounds'               && method === 'GET')  return handleRounds(request, env);
         if (path === '/api/stats'                && method === 'GET')  return handleStats(request, env);
+        if (path === '/api/branding'             && method === 'GET')  return handleBranding(request, env);
         if (path.match(/^\/api\/pubs\/[^/]+\/comments$/) && method === 'GET')
           return handlePubComments(request, env);
         if (path === '/api/votes')                                     return handleVotes(request, env);
@@ -43,6 +47,7 @@ export default {
         if (path === '/api/admin/close-ratings'  && method === 'POST') return handleAdminCloseRatings(request, env);
         if (path === '/api/admin/reset'          && method === 'POST') return handleAdminReset(request, env);
         if (path.startsWith('/api/admin/pubs'))                        return handleAdminPubs(request, env);
+        if (path === '/api/admin/branding')                            return handleAdminBranding(request, env);
 
         return error('Not found', 404);
       } catch (err) {
@@ -54,14 +59,7 @@ export default {
     // Serve SPA shell for /admin without redirecting the browser to / or /index.html
     // (a Location redirect would make "Admin" look like a home-page refresh).
     if ((path === '/admin' || path.startsWith('/admin/')) && (method === 'GET' || method === 'HEAD')) {
-      const assetRes = await env.ASSETS.fetch(new URL('/index.html', url.origin));
-      const headers = new Headers(assetRes.headers);
-      headers.delete('Location');
-      return new Response(assetRes.body, {
-        status: 200,
-        statusText: 'OK',
-        headers,
-      });
+      return serveAdminShell(request, url, env.ASSETS);
     }
 
     // Serve static frontend assets

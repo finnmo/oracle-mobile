@@ -1,7 +1,7 @@
 const CORS = {
   'Access-Control-Allow-Origin': 'https://picker.example.com',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cf-Access-Jwt-Assertion',
 };
 
 export function json(data: unknown, status = 200): Response {

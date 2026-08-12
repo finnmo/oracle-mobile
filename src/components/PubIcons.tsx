@@ -17,7 +17,26 @@ export function ClockIcon({ className }: { className?: string }) {
 }
 
 /**
- * Picnic table — Tabler Icons outline (MIT), Lucide-compatible stroke style.
+ * Default header mark — simple neutral ring (template default).
+ */
+export function MarkIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className ?? 'mark-icon'}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/**
+ * Picnic table — Tabler Icons outline (MIT). Used when a custom icon is not set in some themes.
  * @see https://tabler.io/icons/icon/picnic-table
  */
 export function BenchIcon({ className }: { className?: string }) {

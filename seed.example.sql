@@ -1,0 +1,6 @@
+-- Example starter venues (optional). Not applied automatically.
+-- Copy rows into seed.sql if you want data on first deploy, or add via /admin.
+--
+-- INSERT OR IGNORE INTO pubs (id, name, address, mapsUrl, active) VALUES
+--   ('pub-001', 'The Como', '241 Canning Hwy, Como WA 6152', 'https://maps.google.com/?q=The+Como+Hotel+Perth+WA', 1),
+--   ('pub-002', 'The Vic Park Hotel', '605 Albany Hwy, Victoria Park WA 6100', 'https://maps.google.com/?q=Victoria+Park+Hotel+Perth+WA', 1);

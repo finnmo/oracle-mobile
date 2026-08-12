@@ -17,6 +17,12 @@ function verifyBearerToken(request: Request, env: Env): boolean {
   if (!token) return false;
 
   const auth = request.headers.get('Authorization') ?? '';
+  if (!auth.startsWith('Bearer ')) return false;
+
+  const bearer = auth.slice(7);
+  // JWT-shaped Bearer tokens are Cloudflare Access sessions, not the API token.
+  if (bearer.split('.').length === 3) return false;
+
   const expected = `Bearer ${token}`;
 
   // Constant-time comparison to prevent timing attacks
@@ -52,12 +58,18 @@ async function verifyAccessJwt(request: Request, env: Env): Promise<boolean> {
   }
 }
 
-/** Prefer Access edge header; fall back to CF_Authorization cookie (SPA API calls). */
+/** Prefer Access edge header; fall back to Bearer JWT, then CF_Authorization cookie. */
 function extractAccessJwt(request: Request): string | null {
   const header =
     request.headers.get('Cf-Access-Jwt-Assertion') ??
     request.headers.get('cf-access-jwt-assertion');
   if (header) return header;
+
+  const auth = request.headers.get('Authorization') ?? '';
+  if (auth.startsWith('Bearer ')) {
+    const bearer = auth.slice(7);
+    if (bearer.split('.').length === 3) return bearer;
+  }
 
   const cookie = request.headers.get('Cookie') ?? '';
   const match = /(?:^|;\s*)CF_Authorization=([^;]+)/.exec(cookie);

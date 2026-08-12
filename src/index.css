@@ -1,21 +1,20 @@
 /* ── Variables ─────────────────────────────────────────────────────────────── */
-/* Comp A cards + Comp B dark header — summer beer-garden Friday lunch */
 :root {
-  --bg:           #f3f1eb;   /* warm sun-bleached field */
-  --header-bg:    #1a4538;   /* Comp B deep forest green */
-  --header-fg:    #f7f3ea;   /* cream on dark header */
+  --bg:           #f5f5f5;
+  --header-bg:    #1f2937;
+  --header-fg:    #f9fafb;
   --surface:      #ffffff;
-  --surface-2:    #eef2ef;
-  --border:       #c5d0c8;
-  --border-strong:#7a9486;
-  --timber:       #e8d4b8;   /* Comp B cream / pale-orange header underline */
-  --timber-deep:  #d4b896;
-  --sand:         #c4a574;
-  --accent:       #1a4538;
-  --accent-dim:   #0f2e26;
-  --text:         #14241c;
-  --text-muted:   #4a6358;
-  --green:        #1a4538;
+  --surface-2:    #f3f4f6;
+  --border:       #e5e7eb;
+  --border-strong:#9ca3af;
+  --timber:       #d1d5db;
+  --timber-deep:  #b8bcc2;
+  --sand:         #9ca3af;
+  --accent:       #374151;
+  --accent-dim:   #1f2937;
+  --text:         #111827;
+  --text-muted:   #6b7280;
+  --green:        #374151;
   --red:          #b71c1c;
   --radius:       14px;
   --radius-sm:    12px;
@@ -23,8 +22,8 @@
   --rail-w:       360px;
   --font-display: 'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', Palatino, serif;
   --font-body:    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --card-shadow:  0 4px 18px rgba(20, 36, 28, 0.08);
-  --overlay-lift: 0 10px 32px rgba(10, 20, 16, 0.14);
+  --card-shadow:  0 4px 18px rgba(17, 24, 39, 0.06);
+  --overlay-lift: 0 10px 32px rgba(17, 24, 39, 0.12);
   --header-h:     64px;
 }
 
@@ -35,12 +34,6 @@ html { font-size: 16px; }
 
 body {
   background-color: var(--bg);
-  /* soft midday sun wash — Friday lunch in the beer garden */
-  background-image:
-    radial-gradient(ellipse 90% 55% at 12% -8%, rgba(255, 236, 190, 0.55), transparent 55%),
-    radial-gradient(ellipse 70% 45% at 92% 8%, rgba(200, 220, 190, 0.35), transparent 50%),
-    radial-gradient(ellipse 60% 40% at 50% 100%, rgba(232, 212, 184, 0.2), transparent 55%);
-  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-body);
   min-height: 100dvh;
@@ -360,6 +353,19 @@ textarea { font-family: inherit; }
   height: 26px;
   color: var(--timber);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.header-bench svg,
+.header-bench img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+.header-bench svg {
+  color: inherit;
 }
 
 .header h1 {
@@ -1493,18 +1499,25 @@ textarea::placeholder { color: var(--text-muted); }
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+}
+.vote-pub-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
 }
 .vote-pub-name {
+  flex: 1;
+  min-width: 0;
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  line-height: 1.2;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 .veto-badge {
+  flex-shrink: 0;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.5px;
@@ -1513,8 +1526,10 @@ textarea::placeholder { color: var(--text-muted); }
   background: color-mix(in srgb, var(--red) 12%, transparent);
   border-radius: 4px;
   padding: 1px 5px;
+  margin-top: 2px;
 }
 .you-badge {
+  flex-shrink: 0;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.6px;
@@ -1522,23 +1537,27 @@ textarea::placeholder { color: var(--text-muted); }
   color: #fff;
   background: var(--accent);
   border-radius: 999px;
-  padding: 2px 7px;
+  padding: 3px 7px;
   line-height: 1.2;
+  margin-top: 1px;
 }
 .vote-bar-track {
-  height: 5px;
+  height: 4px;
   background: var(--surface-2);
-  border-radius: 2px;
+  border-radius: 999px;
   overflow: hidden;
 }
 .vote-bar-fill {
   height: 100%;
   width: 100%;
-  background: var(--accent);
-  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 45%, var(--timber));
+  border-radius: 999px;
   transform: scaleX(0);
   transform-origin: left center;
   transition: transform 0.4s ease;
+}
+.vote-bar-fill--mine {
+  background: color-mix(in srgb, var(--accent) 70%, var(--timber));
 }
 .vote-count {
   font-size: 11px;
@@ -2151,4 +2170,135 @@ select.admin-input {
   border-top: 1px solid var(--border);
   padding-top: 16px;
   margin-top: 4px;
+}
+
+/* ── Admin branding panel ──────────────────────────────────────────────────── */
+.admin-branding-hint {
+  margin-bottom: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.admin-branding-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.admin-branding-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.admin-branding-preview-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.admin-branding-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.admin-branding-field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.admin-branding-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.admin-branding-colors {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.admin-color-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-color-input input[type="color"] {
+  width: 44px;
+  height: 40px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.admin-color-input .admin-input {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.admin-branding-hint-inline {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.admin-branding-icon {
+  margin: 16px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.admin-branding-icon-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.admin-icon-upload {
+  position: relative;
+  cursor: pointer;
+}
+
+.admin-branding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.admin-branding-saved {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.setup-empty-card .setup-empty-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.setup-empty-card a {
+  color: var(--accent);
+  font-weight: 600;
 }

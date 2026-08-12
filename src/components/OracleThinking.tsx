@@ -1,4 +1,5 @@
-import { BenchIcon } from './PubIcons';
+import { BrandIcon } from './BrandIcon';
+import { useBranding } from '../context/BrandingContext';
 
 interface Props {
   /** Seconds remaining until announce (0 when at/after the wire). */
@@ -6,14 +7,16 @@ interface Props {
 }
 
 export default function OracleThinking({ secondsLeft }: Props) {
+  const { branding } = useBranding();
   const atWire = secondsLeft <= 0;
+  const title = branding.title;
 
   return (
     <div
       className={`oracle-thinking${atWire ? ' oracle-thinking--deciding' : ''}`}
       role="status"
       aria-live="polite"
-      aria-label={atWire ? 'The Oracle is deciding' : 'The Oracle is thinking'}
+      aria-label={atWire ? `${title} is deciding` : `${title} is thinking`}
     >
       <div className="oracle-thinking-rings" aria-hidden="true">
         <span />
@@ -21,10 +24,10 @@ export default function OracleThinking({ secondsLeft }: Props) {
         <span />
       </div>
 
-      <BenchIcon className="oracle-thinking-mark" />
+      <BrandIcon className="oracle-thinking-mark" branding={branding} />
 
       <p className="oracle-thinking-title">
-        {atWire ? 'The Oracle has decided…' : 'The Oracle is thinking…'}
+        {atWire ? `${title} has decided…` : `${title} is thinking…`}
       </p>
 
       {!atWire ? (
@@ -35,7 +38,7 @@ export default function OracleThinking({ secondsLeft }: Props) {
           </span>
         </p>
       ) : (
-        <p className="oracle-thinking-sub">Rolling the pubs…</p>
+        <p className="oracle-thinking-sub">Rolling the options…</p>
       )}
     </div>
   );

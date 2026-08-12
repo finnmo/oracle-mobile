@@ -74,3 +74,10 @@ CREATE TABLE IF NOT EXISTS vetoes (
 
 CREATE INDEX IF NOT EXISTS idx_vetoes_weekKey ON vetoes(weekKey);
 CREATE INDEX IF NOT EXISTS idx_vetoes_month_ip ON vetoes(monthKey, ipHash);
+
+-- Site branding (title, colours, icons) — single JSON row keyed 'branding'
+CREATE TABLE IF NOT EXISTS app_settings (
+  key       TEXT PRIMARY KEY,
+  value     TEXT NOT NULL,
+  updatedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);

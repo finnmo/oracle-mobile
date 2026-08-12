@@ -99,6 +99,17 @@ export default function VotingSection() {
     );
   }
 
+  if (data.pubs.length === 0) {
+    return (
+      <div className="card setup-empty-card">
+        <div className="card-label">This week&apos;s vote</div>
+        <p className="setup-empty-text">
+          No venues yet. Open <a href="/admin">Admin</a>, sign in, and add venues under <strong>Pub management</strong>.
+        </p>
+      </div>
+    );
+  }
+
   const maxVotes = Math.max(1, ...data.pubs.map(p => p.votes));
   const vetoable = data.pubs.filter(p => !p.vetoed);
   const myVetoPub = data.userVetoedPubId
@@ -163,16 +174,16 @@ export default function VotingSection() {
               </div>
 
               <div className="vote-row-info">
-                <span className="vote-pub-name">
-                  {pub.name}
+                <div className="vote-pub-heading">
+                  <span className="vote-pub-name">{pub.name}</span>
                   {isVetoed && (
                     <span className="veto-badge">{isMyVeto ? 'your veto' : 'vetoed'}</span>
                   )}
                   {isMyVote && <span className="you-badge">YOU</span>}
-                </span>
+                </div>
                 <div className="vote-bar-track" role="progressbar" aria-valuenow={pub.votes} aria-valuemin={0} aria-valuemax={maxVotes}>
                   <div
-                    className="vote-bar-fill"
+                    className={`vote-bar-fill${isMyVote ? ' vote-bar-fill--mine' : ''}`}
                     style={{ transform: `scaleX(${Math.max(pub.votes / maxVotes, pub.votes > 0 ? 0.04 : 0)})` }}
                   />
                 </div>
@@ -206,7 +217,7 @@ export default function VotingSection() {
           </p>
           <p>
             With votes cast, the pick goes to the highest count (ties: first to reach it).
-            With zero votes, Oracle picks a random active pub, skipping vetoed pubs and usually the last three visited.
+            With zero votes, a random active venue is picked, skipping vetoed options and usually the last three visited.
           </p>
           <p>
             A veto removes a pub from the random pool this week only — one per calendar month.

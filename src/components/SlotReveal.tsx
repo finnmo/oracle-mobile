@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Pub } from '../types';
-import { BenchIcon } from './PubIcons';
+import { BrandIcon } from './BrandIcon';
+import { useBranding } from '../context/BrandingContext';
 
 interface Props {
   finalPub: Pub;
@@ -13,6 +14,8 @@ interface Props {
 type Phase = 'intro' | 'spinning' | 'landed';
 
 export default function SlotReveal({ finalPub, allPubNames, onComplete, skipIntro = false }: Props) {
+  const { branding } = useBranding();
+  const title = branding.title;
   const [phase, setPhase] = useState<Phase>(skipIntro ? 'spinning' : 'intro');
   const [displayName, setDisplayName] = useState('');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,15 +109,15 @@ export default function SlotReveal({ finalPub, allPubNames, onComplete, skipIntr
       <div className="announce-reveal-glow" aria-hidden="true" />
 
       <p className="announce-reveal-eyebrow">
-        {phase === 'intro' && 'The Oracle has spoken'}
-        {phase === 'spinning' && 'Choosing this week’s pub…'}
-        {phase === 'landed' && 'Hey — we’re going to'}
+        {phase === 'intro' && `${title} has spoken`}
+        {phase === 'spinning' && 'Choosing this week’s pick…'}
+        {phase === 'landed' && 'This week we’re going to'}
       </p>
 
       <div className="announce-reveal-reel" aria-hidden={phase === 'intro'}>
         <div className="announce-reveal-mask">
           {phase === 'intro' ? (
-            <BenchIcon className="announce-reveal-mark" />
+            <BrandIcon className="announce-reveal-mark" branding={branding} />
           ) : (
             <h2
               className={`announce-reveal-name ${phase === 'landed' ? 'announce-reveal-name--final' : ''}`}

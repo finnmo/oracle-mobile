@@ -101,3 +101,12 @@ export interface AdminPub {
   mapsUrl: string | null;
   active: number;
 }
+
+export interface BrandingSettings {
+  title: string;
+  accentColor: string;
+  mainColor: string;
+  backgroundColor: string;
+  iconSvg: string | null;
+  faviconDataUrl: string | null;
+}

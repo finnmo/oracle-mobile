@@ -1,11 +1,4 @@
-import {
-  StatusResponse,
-  HistoryRound,
-  StatsResponse,
-  VotesResponse,
-  AdminPub,
-  PubReviewsResponse,
-} from './types';
+import { AdminPub, BrandingSettings, PubReviewsResponse, StatsResponse, StatusResponse, VotesResponse, HistoryRound } from './types';
 
 const BASE = '/api';
 
@@ -50,6 +43,13 @@ export async function fetchStats(): Promise<StatsResponse> {
   const res = await fetch(`${BASE}/stats`);
   if (!res.ok) throw new Error('Could not load stats');
   return res.json() as Promise<StatsResponse>;
+}
+
+export async function fetchBranding(): Promise<BrandingSettings> {
+  const res = await fetch(`${BASE}/branding`);
+  if (!res.ok) throw new Error('Could not load branding');
+  const data = (await res.json()) as { branding: BrandingSettings };
+  return data.branding;
 }
 
 export async function fetchPubReviews(pubId: string): Promise<PubReviewsResponse> {
@@ -119,38 +119,23 @@ export function clearAdminToken(): void {
   sessionStorage.removeItem('oracle_admin_token');
 }
 
-/** Production Workers URL — used to bypass Access when an API token is set. */
+function getAccessJwt(): string | null {
+  return sessionStorage.getItem('oracle_access_jwt');
+}
+
+export function clearAccessJwt(): void {
+  sessionStorage.removeItem('oracle_access_jwt');
+}
+
+/** Bypasses Cloudflare Access when /api/admin is still gated there. */
 const WORKERS_DEV_ADMIN = 'https://oracle.example-account.workers.dev/api/admin';
 
-async function adminFetch(path: string, options: RequestInit = {}): Promise<{ res: Response; data: unknown }> {
-  const token = (getAdminToken() ?? '').replace(/[^\x20-\x7E]/g, '');
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> | undefined),
-  };
-  // Only send Bearer when a token is stored; otherwise rely on Cloudflare Access cookies
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  // Access on the custom domain intercepts /api/admin/* before the Worker sees Bearer.
-  // Token login therefore goes to workers.dev (CORS allows this origin). Access-cookie
-  // sessions stay same-origin so CF_Authorization is sent.
-  const onCustomDomain =
-    typeof window !== 'undefined' && window.location.hostname === 'picker.example.com';
-  const useTokenBypass = Boolean(token) && onCustomDomain;
-  const url = `${useTokenBypass ? WORKERS_DEV_ADMIN : '/api/admin'}${path}`;
-
-  const res = await fetch(url, {
-    ...options,
-    credentials: useTokenBypass ? 'omit' : 'include',
-    redirect: 'manual',
-    headers,
-  });
-
-  // Access login redirect (same-origin) when session cookie is missing/expired
+async function parseAdminResponse(res: Response, hadToken: boolean): Promise<{ res: Response; data: unknown }> {
   if (res.status >= 300 && res.status < 400) {
-    throw new Error('Access session missing — open /admin and sign in with Google, or use an API token');
+    throw new Error(
+      'Admin sign-in required — open /admin and sign in with Google. ' +
+      'If you use an API token, remove /api/admin from Cloudflare Access (protect /admin only).'
+    );
   }
 
   const text = await res.text();
@@ -159,18 +144,68 @@ async function adminFetch(path: string, options: RequestInit = {}): Promise<{ re
     data = text ? JSON.parse(text) : {};
   } catch {
     if (text.includes('cloudflareaccess') || text.includes('Sign in') || text.includes('302 Found')) {
-      throw new Error('Access blocked this admin API call — protect only /admin (not /api/admin), or use an API token');
+      throw new Error(
+        'Cloudflare Access blocked the admin API — protect only /admin (not /api/admin), then retry.'
+      );
     }
     const snippet = text.replace(/\s+/g, ' ').slice(0, 80);
     throw new Error(`Admin API returned non-JSON (${res.status})${snippet ? `: ${snippet}` : ''}`);
   }
 
   if (res.status === 401 || res.status === 403) {
-    if (token) clearAdminToken();
-    throw new Error('Unauthorized — Access JWT not accepted (check AUD / team domain) or use API token');
+    if (hadToken) clearAdminToken();
+    throw new Error(
+      'Unauthorized — open /admin and sign in with Google, or use a valid API token below.'
+    );
   }
   if (!res.ok) throw new Error((data as Record<string, string>).error ?? 'Request failed');
   return { res, data };
+}
+
+async function adminFetch(path: string, options: RequestInit = {}): Promise<{ res: Response; data: unknown }> {
+  const apiToken = (getAdminToken() ?? '').replace(/[^\x20-\x7E]/g, '');
+  const accessJwt = getAccessJwt();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> | undefined),
+  };
+  if (apiToken) {
+    headers.Authorization = `Bearer ${apiToken}`;
+  } else if (accessJwt) {
+    headers['Cf-Access-Jwt-Assertion'] = accessJwt;
+  }
+
+  const fetchOpts: RequestInit = {
+    ...options,
+    redirect: 'manual',
+    headers,
+  };
+
+  const onCustomDomain =
+    typeof window !== 'undefined' && window.location.hostname === 'picker.example.com';
+
+  try {
+    const res = await fetch(`/api/admin${path}`, {
+      ...fetchOpts,
+      credentials: 'include',
+    });
+
+    // Access returns 302 before the Worker can read Bearer — fall back to workers.dev with API token only.
+    if (res.status >= 300 && res.status < 400 && apiToken && onCustomDomain) {
+      const remote = await fetch(`${WORKERS_DEV_ADMIN}${path}`, {
+        ...fetchOpts,
+        credentials: 'omit',
+      });
+      return parseAdminResponse(remote, Boolean(apiToken));
+    }
+
+    return parseAdminResponse(res, Boolean(apiToken));
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new Error('Could not reach admin API — check your connection and try again');
+    }
+    throw err;
+  }
 }
 
 export async function adminAnnounce(body: { pubName?: string; pubId?: string; force?: boolean } = {}): Promise<unknown> {
@@ -214,4 +249,19 @@ export async function adminUpdatePub(id: string, updates: Partial<AdminPub>): Pr
 export async function adminDeletePub(id: string): Promise<{ action: string }> {
   const { data } = await adminFetch(`/pubs/${id}`, { method: 'DELETE' });
   return data as { action: string };
+}
+
+export async function adminGetBranding(): Promise<BrandingSettings> {
+  const { data } = await adminFetch('/branding', { method: 'GET' });
+  return (data as { branding: BrandingSettings }).branding;
+}
+
+export async function adminUpdateBranding(
+  patch: Partial<BrandingSettings>
+): Promise<BrandingSettings> {
+  const { data } = await adminFetch('/branding', {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+  return (data as { branding: BrandingSettings }).branding;
 }

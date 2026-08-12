@@ -8,7 +8,9 @@ import SlotReveal from './components/SlotReveal';
 import RatingSection from './components/RatingSection';
 import HistorySection from './components/HistorySection';
 import StatsDrawer, { StatsPanel } from './components/StatsDrawer';
-import { BenchIcon, ChartIcon } from './components/PubIcons';
+import { ChartIcon } from './components/PubIcons';
+import { BrandIcon } from './components/BrandIcon';
+import { useBranding } from './context/BrandingContext';
 import VotingSection from './components/VotingSection';
 import AdminPage from './components/AdminPage';
 import PubCrawlGame from './components/PubCrawlGame';
@@ -42,6 +44,7 @@ export default function App() {
 // ── Main app ──────────────────────────────────────────────────────────────────
 
 function MainApp() {
+  const { branding } = useBranding();
   const [status, setStatus]     = useState<StatusResponse | null>(null);
   const [loading, setLoading]   = useState(true);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
@@ -219,8 +222,8 @@ function MainApp() {
               else sessionStorage.setItem(key, JSON.stringify({ count: next, ts: now }));
             }}
           >
-            <BenchIcon className="header-bench" />
-            <h1>The Oracle</h1>
+            <BrandIcon className="header-bench" branding={branding} />
+            <h1>{branding.title}</h1>
           </div>
           <div className="header-actions">
             <button

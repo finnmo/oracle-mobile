@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pub } from '../types';
+import { useBranding } from '../context/BrandingContext';
 
 interface Props {
   pub: Pub;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function PubCard({ pub, showBadge = true, celebrate = false }: Props) {
+  const { branding } = useBranding();
   const [mapOpen, setMapOpen] = useState(false);
   const [shareNote, setShareNote] = useState<string | null>(null);
 
@@ -19,10 +21,10 @@ export default function PubCard({ pub, showBadge = true, celebrate = false }: Pr
   };
 
   const handleShare = async () => {
-    const text = `This week's pub: ${pub.name}${pub.address ? ` — ${pub.address}` : ''}`;
+    const text = `This week's pick: ${pub.name}${pub.address ? ` — ${pub.address}` : ''}`;
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'Oracle', text });
+        await navigator.share({ title: branding.title, text });
       } catch {
         // User dismissed — no-op
       }
