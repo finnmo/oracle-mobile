@@ -1,21 +1,37 @@
 import { Env } from '../types';
 import {
   computeRoundTimingsFromAnchorYmd,
-  tryResolveCronAnnounceAnchorPerthYmd,
+  tryResolveCronAnnounceAnchorYmd,
 } from '../timeUtils';
+import { buildCronBundle, getSchedule } from '../schedule';
 import { pickPubForWeek } from '../utils/pubPicker';
 
-/** Cron strings registered in wrangler.toml (UTC; weekday names — Cloudflare 1=Sun). */
+/** Cron strings for DEFAULT_SCHEDULE (Perth Friday) — used by unit tests. */
 export const CRON_ANNOUNCE = '0 2 * * THU,FRI';
 export const CRON_OPEN_RATINGS = '20 4 * * THU,FRI';
 export const CRON_CLOSE_RATINGS = '59 15 * * FRI,SAT';
 
 export async function handleCron(event: ScheduledEvent, env: Env): Promise<void> {
   const now = new Date(event.scheduledTime);
+  const schedule = getSchedule(env);
+  const crons = buildCronBundle(schedule, now);
 
-  // Run on every cron so a missed CRON_CLOSE_RATINGS firing is caught by the next announce/open cron.
+  // Run on every cron so a missed close firing is caught by the next announce/open cron.
   await closeRatings(now, env);
 
+  if (event.cron === crons.announce) {
+    await announcePub(now, env);
+    return;
+  }
+  if (event.cron === crons.openRatings) {
+    await openRatings(now, env);
+    return;
+  }
+  if (event.cron === crons.closeRatings) {
+    return;
+  }
+
+  // Fallback: match legacy Perth constants (existing Workers mid-migrate)
   switch (event.cron) {
     case CRON_ANNOUNCE:
       await announcePub(now, env);
@@ -24,23 +40,21 @@ export async function handleCron(event: ScheduledEvent, env: Env): Promise<void>
       await openRatings(now, env);
       break;
     case CRON_CLOSE_RATINGS:
-      // already handled above
       break;
     default:
       console.warn(`Unhandled cron expression: ${event.cron}`);
   }
 }
 
-// ─── Announce ───────────────────────────────────────────────────────────────
-
 async function announcePub(now: Date, env: Env): Promise<void> {
-  const anchorYmd = tryResolveCronAnnounceAnchorPerthYmd(now);
+  const schedule = getSchedule(env);
+  const anchorYmd = tryResolveCronAnnounceAnchorYmd(now, schedule);
   if (!anchorYmd) {
-    console.log('[cron] Announce skipped — not a pub-week announce day in Perth');
+    console.log('[cron] Announce skipped — not an announce day for this schedule');
     return;
   }
 
-  const timings = computeRoundTimingsFromAnchorYmd(anchorYmd);
+  const timings = computeRoundTimingsFromAnchorYmd(anchorYmd, schedule);
   const { weekKey } = timings;
 
   const existing = await env.DB.prepare(
@@ -93,8 +107,6 @@ async function announcePub(now: Date, env: Env): Promise<void> {
   console.log(`[cron] Round ${weekKey} announced — pub ${pubId}`);
 }
 
-// ─── Open ratings ────────────────────────────────────────────────────────────
-
 async function openRatings(now: Date, env: Env): Promise<void> {
   const nowIso = now.toISOString();
   const result = await env.DB.prepare(`
@@ -106,8 +118,6 @@ async function openRatings(now: Date, env: Env): Promise<void> {
 
   console.log(`[cron] Ratings opened (rows changed: ${result.meta.changes})`);
 }
-
-// ─── Close ratings ───────────────────────────────────────────────────────────
 
 async function closeRatings(now: Date, env: Env): Promise<void> {
   const nowIso = now.toISOString();

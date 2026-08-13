@@ -1,53 +1,41 @@
-// All times are stored and compared in UTC as ISO 8601 strings.
-// Perth uses Australia/Perth (UTC+8, no DST).
-// Normal week: anchor = calendar Friday in Perth. If that Friday is a WA public holiday,
-// anchor moves to the preceding Thursday (same local clock times).
+// Round schedule math. Times are stored/compared as UTC ISO strings.
+// Local wall times come from ScheduleConfig (wrangler [vars] / onboard wizard).
 
 import { isWaPublicHoliday } from './waPublicHolidays';
+import {
+  DEFAULT_SCHEDULE,
+  ScheduleConfig,
+  addZonedDays,
+  zonedLocalToUtc,
+  zonedWeekday,
+  zonedYmd,
+  prevWeekday,
+} from './schedule';
 
 export interface RoundTimings {
-  weekKey: string; // YYYY-MM-DD of the round anchor (usually Friday; Thursday when Friday is a WA PH)
+  weekKey: string; // YYYY-MM-DD of the round anchor in the configured timezone
   announceAtUtc: string;
   meetAtUtc: string;
   rateOpenAtUtc: string;
   rateCloseAtUtc: string;
 }
 
-/** Calendar date YYYY-MM-DD in Australia/Perth for this instant. */
+/** @deprecated Prefer zonedYmd(utc, schedule.timezone). Kept for Perth-era tests. */
 export function perthYmd(utc: Date): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Australia/Perth',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(utc);
+  return zonedYmd(utc, 'Australia/Perth');
 }
 
-/** 0 = Sunday … 6 = Saturday (Perth calendar day containing `utc`). */
+/** @deprecated Prefer zonedWeekday. */
 export function perthWeekday(utc: Date): number {
-  const wd = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Australia/Perth',
-    weekday: 'short',
-  }).format(utc);
-  const map: Record<string, number> = {
-    Sun: 0,
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-  };
-  return map[wd] ?? 0;
+  return zonedWeekday(utc, 'Australia/Perth');
 }
 
-/** Add whole calendar days in Perth (fixed +08:00, no DST). */
+/** @deprecated Prefer addZonedDays. */
 export function addPerthDays(perthYmdStr: string, deltaDays: number): string {
-  const ms = Date.parse(`${perthYmdStr}T12:00:00+08:00`) + deltaDays * 24 * 60 * 60 * 1000;
-  return perthYmd(new Date(ms));
+  return addZonedDays(perthYmdStr, deltaDays, 'Australia/Perth');
 }
 
-/** Next calendar day after `ymd` (Gregorian, for rate-close which follows anchor by one date). */
+/** Next calendar day after `ymd` (Gregorian). */
 export function utcYmdPlusOneDay(ymd: string): string {
   const [y, m, d] = ymd.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
@@ -59,59 +47,76 @@ export function utcYmdPlusOneDay(ymd: string): string {
 }
 
 /**
- * True if `perthYmd` is a valid round anchor day:
- * - Friday and not a WA public holiday, or
- * - Thursday when the following Friday is a WA public holiday.
+ * True if `ymd` (in schedule.timezone) is a valid round anchor day.
+ * With holidayShift=wa: primary weekday when not a WA PH, or previous day when
+ * the following primary weekday is a WA PH.
  */
-export function isPotentialRoundAnchorPerthYmd(perthYmd: string): boolean {
-  const noon = new Date(Date.parse(`${perthYmd}T12:00:00+08:00`));
-  const wd = perthWeekday(noon);
-  if (wd === 5) return !isWaPublicHoliday(perthYmd);
-  if (wd === 4) return isWaPublicHoliday(addPerthDays(perthYmd, 1));
-  return false;
+export function isPotentialRoundAnchorYmd(
+  ymd: string,
+  schedule: ScheduleConfig = DEFAULT_SCHEDULE
+): boolean {
+  const noon = zonedLocalToUtc(ymd, '12:00', schedule.timezone);
+  const wd = zonedWeekday(noon, schedule.timezone);
+  const primary = schedule.announceWeekday;
+
+  if (schedule.holidayShift === 'wa') {
+    if (wd === primary) return !isWaPublicHoliday(ymd);
+    if (wd === prevWeekday(primary)) {
+      return isWaPublicHoliday(addZonedDays(ymd, 1, schedule.timezone));
+    }
+    return false;
+  }
+
+  return wd === primary;
 }
 
-/** All anchor weeks whose key dates fall within [center - back, center + forward] in Perth. */
+/** @deprecated Use isPotentialRoundAnchorYmd with DEFAULT_SCHEDULE. */
+export function isPotentialRoundAnchorPerthYmd(perthYmdStr: string): boolean {
+  return isPotentialRoundAnchorYmd(perthYmdStr, DEFAULT_SCHEDULE);
+}
+
 function collectPotentialAnchorTimingsInRange(
-  perthCenterYmd: string,
+  centerYmd: string,
   daysBack: number,
-  daysForward: number
+  daysForward: number,
+  schedule: ScheduleConfig
 ): RoundTimings[] {
   const out: RoundTimings[] = [];
   for (let i = -daysBack; i <= daysForward; i++) {
-    const ymd = addPerthDays(perthCenterYmd, i);
-    if (isPotentialRoundAnchorPerthYmd(ymd)) {
-      out.push(computeRoundTimingsFromAnchorYmd(ymd));
+    const ymd = addZonedDays(centerYmd, i, schedule.timezone);
+    if (isPotentialRoundAnchorYmd(ymd, schedule)) {
+      out.push(computeRoundTimingsFromAnchorYmd(ymd, schedule));
     }
   }
   return out;
 }
 
-/**
- * Timestamps for a round whose anchor calendar day in Perth is `anchorPerthYmd`
- * (Thursday or Friday as above). Local meaning: 10:00 / 12:00 / 12:20 Perth on that day;
- * ratings close at 23:59 Perth on the following calendar day.
- */
-export function computeRoundTimingsFromAnchorYmd(anchorPerthYmd: string): RoundTimings {
-  const weekKey = anchorPerthYmd;
-  const announceAtUtc = `${weekKey}T02:00:00.000Z`;
-  const meetAtUtc = `${weekKey}T04:00:00.000Z`;
-  const rateOpenAtUtc = `${weekKey}T04:20:00.000Z`;
+export function computeRoundTimingsFromAnchorYmd(
+  anchorYmd: string,
+  schedule: ScheduleConfig = DEFAULT_SCHEDULE
+): RoundTimings {
+  const weekKey = anchorYmd;
+  const announceAtUtc = zonedLocalToUtc(weekKey, schedule.announceLocalTime, schedule.timezone).toISOString();
+  const meetAtUtc = zonedLocalToUtc(weekKey, schedule.meetLocalTime, schedule.timezone).toISOString();
+  const rateOpenAtUtc = zonedLocalToUtc(weekKey, schedule.rateOpenLocalTime, schedule.timezone).toISOString();
 
-  const closeYmd = utcYmdPlusOneDay(weekKey);
-  const rateCloseAtUtc = `${closeYmd}T15:59:00.000Z`;
+  const closeYmd = addZonedDays(weekKey, 1, schedule.timezone);
+  const rateCloseAtUtc = zonedLocalToUtc(
+    closeYmd,
+    schedule.rateCloseLocalTime,
+    schedule.timezone
+  ).toISOString();
 
   return { weekKey, announceAtUtc, meetAtUtc, rateOpenAtUtc, rateCloseAtUtc };
 }
 
-/**
- * Anchor weekKey used for votes/vetoes and admin targeting: the active round if we are
- * between announce and close, otherwise the next round (by announce time).
- */
-export function getVoteAndRoundAnchorPerthYmd(now: Date): string {
-  const today = perthYmd(now);
+export function getVoteAndRoundAnchorYmd(
+  now: Date,
+  schedule: ScheduleConfig = DEFAULT_SCHEDULE
+): string {
+  const today = zonedYmd(now, schedule.timezone);
   const nowIso = now.toISOString();
-  const candidates = collectPotentialAnchorTimingsInRange(today, 12, 28);
+  const candidates = collectPotentialAnchorTimingsInRange(today, 12, 28, schedule);
   const open = candidates.filter((t) => t.rateCloseAtUtc > nowIso);
   const inFlight = open.find((t) => t.announceAtUtc <= nowIso && nowIso < t.rateCloseAtUtc);
   if (inFlight) return inFlight.weekKey;
@@ -122,48 +127,69 @@ export function getVoteAndRoundAnchorPerthYmd(now: Date): string {
   if (future.length > 0) return future[0].weekKey;
 
   for (let i = 0; i <= 35; i++) {
-    const ymd = addPerthDays(today, i);
-    if (!isPotentialRoundAnchorPerthYmd(ymd)) continue;
-    const t = computeRoundTimingsFromAnchorYmd(ymd);
+    const ymd = addZonedDays(today, i, schedule.timezone);
+    if (!isPotentialRoundAnchorYmd(ymd, schedule)) continue;
+    const t = computeRoundTimingsFromAnchorYmd(ymd, schedule);
     if (t.rateCloseAtUtc > nowIso) return t.weekKey;
   }
 
-  return computeRoundTimingsFromAnchorYmd(addPerthDays(today, 7)).weekKey;
+  return computeRoundTimingsFromAnchorYmd(addZonedDays(today, 7, schedule.timezone), schedule).weekKey;
 }
 
-/** Between rounds: next round schedule (first anchor whose round has not yet closed). */
-export function getNextRoundTimings(now: Date): RoundTimings {
-  const today = perthYmd(now);
+/** @deprecated */
+export function getVoteAndRoundAnchorPerthYmd(now: Date): string {
+  return getVoteAndRoundAnchorYmd(now, DEFAULT_SCHEDULE);
+}
+
+export function getNextRoundTimings(
+  now: Date,
+  schedule: ScheduleConfig = DEFAULT_SCHEDULE
+): RoundTimings {
+  const today = zonedYmd(now, schedule.timezone);
   const nowIso = now.toISOString();
   for (let i = 0; i <= 21; i++) {
-    const ymd = addPerthDays(today, i);
-    if (!isPotentialRoundAnchorPerthYmd(ymd)) continue;
-    const t = computeRoundTimingsFromAnchorYmd(ymd);
+    const ymd = addZonedDays(today, i, schedule.timezone);
+    if (!isPotentialRoundAnchorYmd(ymd, schedule)) continue;
+    const t = computeRoundTimingsFromAnchorYmd(ymd, schedule);
     if (t.rateCloseAtUtc > nowIso) return t;
   }
-  return computeRoundTimingsFromAnchorYmd(addPerthDays(today, 7));
+  return computeRoundTimingsFromAnchorYmd(addZonedDays(today, 7, schedule.timezone), schedule);
 }
 
 /**
- * Cron at Thu/Fri 02:00 UTC (10:00 Perth): return anchor YYYY-MM-DD to announce, or null to skip.
+ * Cron announce tick: return anchor YYYY-MM-DD to announce, or null to skip.
  */
-export function tryResolveCronAnnounceAnchorPerthYmd(now: Date): string | null {
-  const todayYmd = perthYmd(now);
-  const wd = perthWeekday(now);
+export function tryResolveCronAnnounceAnchorYmd(
+  now: Date,
+  schedule: ScheduleConfig = DEFAULT_SCHEDULE
+): string | null {
+  const todayYmd = zonedYmd(now, schedule.timezone);
+  const wd = zonedWeekday(now, schedule.timezone);
+  const primary = schedule.announceWeekday;
 
-  if (wd === 4) {
-    const tomorrow = addPerthDays(todayYmd, 1);
-    if (isWaPublicHoliday(tomorrow)) return todayYmd;
+  if (schedule.holidayShift === 'wa') {
+    if (wd === prevWeekday(primary)) {
+      const tomorrow = addZonedDays(todayYmd, 1, schedule.timezone);
+      if (isWaPublicHoliday(tomorrow)) return todayYmd;
+      return null;
+    }
+    if (wd === primary) {
+      if (isWaPublicHoliday(todayYmd)) return null;
+      return todayYmd;
+    }
     return null;
   }
-  if (wd === 5) {
-    if (isWaPublicHoliday(todayYmd)) return null;
-    return todayYmd;
-  }
+
+  if (wd === primary) return todayYmd;
   return null;
 }
 
-/** @deprecated Use computeRoundTimingsFromAnchorYmd(perthYmd) or getVoteAndRoundAnchorPerthYmd. */
+/** @deprecated */
+export function tryResolveCronAnnounceAnchorPerthYmd(now: Date): string | null {
+  return tryResolveCronAnnounceAnchorYmd(now, DEFAULT_SCHEDULE);
+}
+
+/** @deprecated */
 export function computeRoundTimings(fridayUtc: Date): RoundTimings {
   const y = fridayUtc.getUTCFullYear();
   const m = String(fridayUtc.getUTCMonth() + 1).padStart(2, '0');
@@ -171,9 +197,9 @@ export function computeRoundTimings(fridayUtc: Date): RoundTimings {
   return computeRoundTimingsFromAnchorYmd(`${y}-${m}-${d}`);
 }
 
-/** @deprecated Use getVoteAndRoundAnchorPerthYmd. */
+/** @deprecated */
 export function getNextFridayUtc(now: Date): Date {
-  const anchor = getVoteAndRoundAnchorPerthYmd(now);
+  const anchor = getVoteAndRoundAnchorYmd(now);
   const [y, mo, da] = anchor.split('-').map(Number);
   return new Date(Date.UTC(y, mo - 1, da, 2, 0, 0, 0));
 }

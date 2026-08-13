@@ -1,7 +1,8 @@
 import { Env } from '../../types';
 import { json, error } from '../../response';
 import { requireAdmin } from '../../auth';
-import { getVoteAndRoundAnchorPerthYmd } from '../../timeUtils';
+import { getVoteAndRoundAnchorYmd } from '../../timeUtils';
+import { getSchedule } from '../../schedule';
 
 export async function handleAdminCloseRatings(request: Request, env: Env): Promise<Response> {
   const authErr = await requireAdmin(request, env);
@@ -16,7 +17,7 @@ export async function handleAdminCloseRatings(request: Request, env: Env): Promi
     .bind(nowIso)
     .first<{ weekKey: string }>();
 
-  const weekKey = activeRound?.weekKey ?? getVoteAndRoundAnchorPerthYmd(nowUtc);
+  const weekKey = activeRound?.weekKey ?? getVoteAndRoundAnchorYmd(nowUtc, getSchedule(env));
 
   const result = await env.DB.prepare(`
     UPDATE rounds

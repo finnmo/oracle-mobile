@@ -2,6 +2,16 @@
 
 Works on **Windows, macOS, and Linux** (Node.js + npm). You do not need Mac-specific tools.
 
+## Repo = blank template · Each deploy = its own branding in D1
+
+| Layer | What it is |
+|-------|------------|
+| **This GitHub repo** | Blank starter (“Weekly Picker”, neutral grey, no venues) |
+| **Your Cloudflare D1** | *Your* title, colours, icon, pubs — set in `/admin` after deploy |
+| **Your `wrangler.toml`** | Local only (gitignored). Copy from `wrangler.toml.example` |
+
+Pushing template code does not wipe an existing D1. New forks start blank until they save branding in Admin.
+
 ## Quick start (recommended)
 
 ```bash
@@ -17,10 +27,22 @@ No Cloudflare Access / Google SSO setup required.
 | Goal | Command |
 |------|---------|
 | New site on your account | `npm run onboard` |
-| Trial without touching Oracle | `npm run onboard:sandbox` |
-| Update live Oracle only | `npm run onboard` → choose deploy-only |
+| Trial without touching production config | `npm run onboard:sandbox` |
+| Update an existing protected site | keep local `wrangler.toml` → `npm run onboard` → deploy-only |
 
 `npm run deploy` never wipes D1. `npm run setup` only creates empty tables.
+
+### GitHub Actions deploy (maintainers)
+
+Deploy is **manual only** (`workflow_dispatch`) — nothing ships on push to `main`.
+
+Required repository secrets:
+
+| Secret | Purpose |
+|--------|---------|
+| `CLOUDFLARE_API_TOKEN` | Deploy permission |
+| `CLOUDFLARE_ACCOUNT_ID` | Account |
+| `WRANGLER_TOML` | Full production `wrangler.toml` contents (not stored in git) |
 
 ---
 
@@ -34,11 +56,11 @@ Everything below is handled by `npm run onboard` unless noted.
 | Cloudflare account | Prerequisite | Free tier is fine |
 | `npm install` | Yes (if needed) | |
 | `wrangler login` | Yes | Opens a browser |
-| Own `wrangler.toml` | Yes | Forks still contain Finn’s Oracle config — choose **overwrite** for your site |
-| Blank template (title/icon) | Yes (optional prompt) | Otherwise you keep whatever is in the repo |
+| Own `wrangler.toml` | Yes | Created from `wrangler.toml.example` (never committed) |
+| Blank template (title/icon) | Yes (optional prompt) | |
 | Create D1 database | Yes | |
-| Write `database_id` + `SITE_ORIGIN` | Yes | |
-| Cron schedules | Yes (in config) | Deployed with the Worker |
+| Write `database_id` + `SITE_ORIGIN` + schedule | Yes | Timezone, announce day/time, meet, ratings |
+| Cron schedules | Yes | Generated from your local times → UTC |
 | `ADMIN_PASSWORD` secret | Yes | Password for `/admin` |
 | Optional `ADMIN_API_TOKEN` | Yes (optional) | For curl/scripts |
 | Apply `schema.sql` (empty tables) | Yes | No venues until you add them |
@@ -55,14 +77,19 @@ Everything below is handled by `npm run onboard` unless noted.
 4. **Pub management** — add venues
 5. Share the home URL with your group
 
-### Things that are Perth-specific (not in the wizard)
+### Weekly schedule (wizard)
 
-The schedule and holiday shift are built for **Australia/Perth**:
+The onboard wizard asks for:
 
-- Announce ~10:00, meet 12:00, ratings open ~12:20, close next evening
-- Friday → Thursday shift when Friday is a WA public holiday (`worker/waPublicHolidays.ts`)
+1. **Timezone** (IANA, e.g. `Australia/Perth`, `Europe/London`)
+2. **Announce weekday** + **time**
+3. **Meet time**
+4. **Ratings open** (default meet + 20 minutes) and **close** (default 23:59 next day)
+5. Optional **WA public-holiday shift** (off by default)
 
-Other cities: change crons in `wrangler.toml` and/or the time helpers after deploy. Not required to get a working site.
+These become `SCHEDULE_*` vars in `wrangler.toml` plus matching UTC crons. Change later by editing those vars and regenerating crons (or re-running onboard for a new site).
+
+If your timezone observes daylight saving, UTC cron hours can drift when clocks change — re-run onboard schedule generation (or edit the three cron lines) after the switch.
 
 ---
 
@@ -125,6 +152,8 @@ npx wrangler login
 npx wrangler d1 create my-picker-db
 ```
 
+Optional local guard (gitignored): list production D1 UUIDs in `.protect-databases` so sandbox/onboard refuse them.
+
 ### 3. Tables + password + deploy
 
 ```bash
@@ -169,7 +198,7 @@ Open http://localhost:5173/admin
 
 | Problem | Fix |
 |---------|-----|
-| Fork deploys to wrong place | Overwrite `wrangler.toml` (wizard prompt) or start from `wrangler.toml.example` |
+| Fork deploys to wrong place | Start from `wrangler.toml.example`; never commit production `wrangler.toml` |
 | Wrong password | `npx wrangler secret put ADMIN_PASSWORD` |
 | Login then 401 | Use same-origin `/admin`; allow cookies |
 | Google / Access page | Disable Access app for this hostname |
@@ -189,5 +218,5 @@ Open http://localhost:5173/admin
 - [ ] `/admin` password works
 - [ ] Branding saved
 - [ ] At least one venue added
+- [ ] (Optional) Confirm schedule timezone/day/times in wizard matched your group
 - [ ] (Optional) Custom domain attached
-- [ ] (Optional) Crons/timezone adjusted if not Perth

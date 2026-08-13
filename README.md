@@ -1,13 +1,13 @@
-# Weekly Picker (picker.example.com)
+# Weekly Picker
 
-This repository deploys **https://picker.example.com** — the Oracle pub-of-the-week app. Pubs, branding, and history live in **Cloudflare D1**; routine deploys only update code.
+Blank Cloudflare template for a login-free weekly venue picker: vote during the week, announce on a schedule, rate afterward. Pubs, branding, and history live in **each deploy’s Cloudflare D1** — the repo itself stays a neutral starter.
 
 | Goal | Action |
 |------|--------|
-| Ship code to Oracle production | `npm run onboard` (deploy-only) or `npm run deploy` |
-| Deploy a **new** blank site elsewhere | `npm run onboard` or [SETUP.md](SETUP.md) |
-
-Forkers get a blank template (`seed.sql` empty, API defaults = “Weekly Picker”). Oracle keeps its DB branding and pubs.
+| New site on your Cloudflare account | `npm run onboard` or [SETUP.md](SETUP.md) |
+| Safe trial without touching an existing Worker | `npm run onboard:sandbox` |
+| Ship code (local) | `npm run deploy` (needs your own `wrangler.toml`) |
+| Ship production via GitHub | Actions → **Deploy** → Run workflow (manual only) |
 
 ---
 
@@ -29,26 +29,29 @@ No user login on the public site. Each phone gets a random `deviceId` in `localS
 
 ```bash
 npm install          # once
-npm run onboard      # interactive wizard (new site or Oracle deploy-only)
+cp wrangler.toml.example wrangler.toml   # then fill database_id + SITE_ORIGIN
+npm run onboard      # interactive wizard (creates config if missing)
 npm run deploy       # build + publish only
 ```
 
-Customize in the browser: **`/admin`** → Site branding + Pub management.
+`wrangler.toml` is **gitignored** — never commit production IDs or hostnames. Customize in the browser: **`/admin`** → Site branding + venue management.
 
 ---
 
-## Weekly schedule (Perth / UTC+8)
+## Weekly schedule
 
-Default week anchor is **Friday** in Perth (Thursday when Friday is a WA public holiday). See `worker/waPublicHolidays.ts` for holiday dates.
+Chosen in **`npm run onboard`** (timezone, announce weekday + time, meet time, ratings open/close). Stored in `wrangler.toml` `[vars]` and converted to UTC crons.
 
-| Event         | Perth time (normal week) | UTC crons (`wrangler.toml`) |
-|---------------|--------------------------|-----------------------------|
-| Announced     | Thu/Fri **10:00**        | `0 2 * * THU,FRI`           |
-| Meet time     | Thu/Fri 12:00            | *(display only)*            |
-| Ratings open  | Thu/Fri 12:20            | `20 4 * * THU,FRI`          |
-| Ratings close | Fri/Sat 23:59 Perth*     | `59 15 * * FRI,SAT`         |
+| Event         | Default (if you accept wizard defaults) |
+|---------------|----------------------------------------|
+| Announced     | Friday 10:00 local |
+| Meet          | Friday 12:00 local |
+| Ratings open  | Friday 12:20 local |
+| Ratings close | Saturday 23:59 local |
 
-Crons run automatically. Admins can announce / open / close early from `/admin`.
+Optional WA public-holiday shift (announce one day earlier) is a wizard prompt — off by default for new sites.
+
+Re-run the wizard (or edit `SCHEDULE_*` vars + regenerate crons) to change the ritual.
 
 ---
 
@@ -60,7 +63,7 @@ npm run dev:worker   # API on :8787
 npm run dev:ui       # UI on :5173 (proxies /api)
 ```
 
-Admin on localhost: http://localhost:5173/admin — set `ADMIN_PASSWORD` in `.dev.vars`, then sign in with that password.
+Admin on localhost: http://localhost:5173/admin — set `ADMIN_PASSWORD` in `.dev.vars`, then sign in.
 
 ---
 
@@ -70,7 +73,7 @@ Primary: **password** (`ADMIN_PASSWORD` Worker secret) → HttpOnly session cook
 
 Optional: Bearer `ADMIN_API_TOKEN` for curl/scripts.
 
-Cloudflare Access is **not required**. If you still have an Access app on `/admin`, disable it so the password form works.
+Cloudflare Access is **not required**. Optional `CF_ACCESS_*` vars remain supported if you already use Access.
 
 ```bash
 npx wrangler secret put ADMIN_PASSWORD
@@ -82,8 +85,6 @@ npx wrangler secret put ADMIN_API_TOKEN
 
 ## Admin API (scripts / token)
 
-Bearer `ADMIN_API_TOKEN`, or session cookie after `/admin` password login.
-
 ```bash
 BASE="https://your-domain.com"
 TOKEN="your-admin-token"
@@ -91,8 +92,6 @@ TOKEN="your-admin-token"
 curl "$BASE/api/admin/pubs" -H "Authorization: Bearer $TOKEN"
 curl -X POST "$BASE/api/admin/announce" -H "Authorization: Bearer $TOKEN"
 ```
-
-Full API reference: see sections below in this file (announce, reset, pubs).
 
 ---
 
@@ -112,14 +111,13 @@ Full API reference: see sections below in this file (announce, reset, pubs).
 ## Project layout
 
 ```
-oracle-mobile/
-├── SETUP.md           ← start here for deploy
-├── wrangler.toml.example
-├── schema.sql         ← DB tables
-├── seed.sql           ← empty by default
-├── seed.example.sql   ← optional example venues
-├── worker/            ← API + cron
-└── src/               ← React UI
+├── SETUP.md              ← deploy walkthrough
+├── wrangler.toml.example ← copy to wrangler.toml (gitignored)
+├── schema.sql
+├── seed.sql / seed.example.sql
+├── instances/README.md   ← keep venue backups private
+├── worker/               ← API + cron
+└── src/                  ← React UI
 ```
 
 ---

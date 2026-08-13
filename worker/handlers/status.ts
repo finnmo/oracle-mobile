@@ -1,6 +1,7 @@
 import { Env, AppState } from '../types';
 import { json } from '../response';
 import { getNextRoundTimings } from '../timeUtils';
+import { getSchedule, schedulePublicView } from '../schedule';
 import { sha256 } from '../auth';
 
 export type StatusPayload = {
@@ -8,6 +9,7 @@ export type StatusPayload = {
   state: AppState;
   round: Record<string, unknown>;
   ratings: { average: number; count: number } | null;
+  schedule: ReturnType<typeof schedulePublicView>;
 };
 
 interface RoundRow {
@@ -34,6 +36,7 @@ interface RatingStats {
 export async function buildStatus(env: Env): Promise<StatusPayload> {
   const nowUtc = new Date();
   const nowIso = nowUtc.toISOString();
+  const schedule = getSchedule(env);
 
   // Fetch the most recent round (may or may not be active)
   const row = await env.DB.prepare(`
@@ -92,9 +95,9 @@ export async function buildStatus(env: Env): Promise<StatusPayload> {
         : null,
     };
   } else {
-    // Between rounds — compute next round schedule (Perth Fri, or Thu if Fri is a WA PH)
+    // Between rounds — compute next round from configured schedule
     state = 'countdown_announce';
-    const timings = getNextRoundTimings(nowUtc);
+    const timings = getNextRoundTimings(nowUtc, schedule);
     roundPayload = {
       id: null,
       weekKey: timings.weekKey,
@@ -125,7 +128,13 @@ export async function buildStatus(env: Env): Promise<StatusPayload> {
     }
   }
 
-  return { serverNowUtc: nowIso, state, round: roundPayload, ratings };
+  return {
+    serverNowUtc: nowIso,
+    state,
+    round: roundPayload,
+    ratings,
+    schedule: schedulePublicView(schedule),
+  };
 }
 
 export async function handleStatus(req: Request, env: Env): Promise<Response> {

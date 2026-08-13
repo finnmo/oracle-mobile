@@ -12,11 +12,11 @@ CREATE TABLE IF NOT EXISTS pubs (
 -- One row per Friday week
 CREATE TABLE IF NOT EXISTS rounds (
   id             TEXT PRIMARY KEY,
-  weekKey        TEXT NOT NULL UNIQUE, -- YYYY-MM-DD round anchor in Perth (usually Friday; Thursday when Friday is a WA public holiday)
-  announceAtUtc  TEXT NOT NULL,        -- Friday 02:00 UTC (10:00 Perth)
-  meetAtUtc      TEXT NOT NULL,        -- Friday 04:00 UTC (12:00 Perth)
-  rateOpenAtUtc  TEXT NOT NULL,        -- Friday 04:20 UTC (12:20 Perth)
-  rateCloseAtUtc TEXT NOT NULL,        -- Saturday 15:59 UTC (Friday 23:59 Perth)
+  weekKey        TEXT NOT NULL UNIQUE, -- YYYY-MM-DD round anchor in configured timezone
+  announceAtUtc  TEXT NOT NULL,
+  meetAtUtc      TEXT NOT NULL,
+  rateOpenAtUtc  TEXT NOT NULL,
+  rateCloseAtUtc TEXT NOT NULL,        -- typically next calendar day after anchor
   chosenPubId    TEXT REFERENCES pubs(id),
   chosenAtUtc    TEXT,
   chosenBy       TEXT CHECK(chosenBy IN ('cron', 'api')),

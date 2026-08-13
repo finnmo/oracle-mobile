@@ -1,7 +1,8 @@
 import { Env } from '../types';
 import { json, error } from '../response';
 import { sha256 } from '../auth';
-import { getVoteAndRoundAnchorPerthYmd } from '../timeUtils';
+import { getVoteAndRoundAnchorYmd } from '../timeUtils';
+import { getSchedule } from '../schedule';
 import { isValidDeviceId } from '../utils/validate';
 
 /** One vote per device per week (hashed). No IP limits — shared Wi‑Fi is normal. */
@@ -33,7 +34,7 @@ export async function handleVotes(request: Request, env: Env): Promise<Response>
 
 async function getVotes(request: Request, env: Env): Promise<Response> {
   const nowUtc = new Date();
-  const weekKey = getVoteAndRoundAnchorPerthYmd(nowUtc);
+  const weekKey = getVoteAndRoundAnchorYmd(nowUtc, getSchedule(env));
 
   const url = new URL(request.url);
   const deviceId = url.searchParams.get('deviceId');
@@ -116,7 +117,7 @@ async function castVote(request: Request, env: Env): Promise<Response> {
   if (!isValidDeviceId(deviceId)) return error('Invalid request', 400);
 
   const nowUtc = new Date();
-  const weekKey = getVoteAndRoundAnchorPerthYmd(nowUtc);
+  const weekKey = getVoteAndRoundAnchorYmd(nowUtc, getSchedule(env));
 
   const round = await env.DB.prepare(
     'SELECT status FROM rounds WHERE weekKey = ?'

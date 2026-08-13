@@ -1,7 +1,8 @@
 import { Env } from '../../types';
 import { json, error } from '../../response';
 import { requireAdmin } from '../../auth';
-import { getVoteAndRoundAnchorPerthYmd } from '../../timeUtils';
+import { getVoteAndRoundAnchorYmd } from '../../timeUtils';
+import { getSchedule } from '../../schedule';
 
 export async function handleAdminReset(request: Request, env: Env): Promise<Response> {
   const authErr = await requireAdmin(request, env);
@@ -16,7 +17,7 @@ export async function handleAdminReset(request: Request, env: Env): Promise<Resp
     .bind(nowIso)
     .first<{ weekKey: string }>();
 
-  const weekKey = activeRound?.weekKey ?? getVoteAndRoundAnchorPerthYmd(nowUtc);
+  const weekKey = activeRound?.weekKey ?? getVoteAndRoundAnchorYmd(nowUtc, getSchedule(env));
 
   const existing = await env.DB.prepare(
     'SELECT id, status FROM rounds WHERE weekKey = ?'

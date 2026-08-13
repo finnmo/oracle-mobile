@@ -330,7 +330,8 @@ function StatusView({
   pubNames,
   onRevealComplete,
 }: StatusViewProps) {
-  const { state, round, ratings, serverNowUtc } = status;
+  const { state, round, ratings, serverNowUtc, schedule } = status;
+  const timezone = schedule?.timezone ?? 'Australia/Perth';
   const msUntilAnnounce = useMsUntil(round.announceAtUtc, serverNowUtc);
   const inThinkingWindow =
     state === 'countdown_announce' &&
@@ -350,6 +351,7 @@ function StatusView({
               targetUtc={round.announceAtUtc}
               serverNowUtc={serverNowUtc}
               label="Announce"
+              timezone={timezone}
             />
           )}
           {!inThinkingWindow && <VotingSection />}
@@ -372,6 +374,7 @@ function StatusView({
             targetUtc={round.meetAtUtc}
             serverNowUtc={serverNowUtc}
             label="Meet in"
+            timezone={timezone}
           />
         </>
       )}

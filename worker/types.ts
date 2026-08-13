@@ -15,6 +15,14 @@ export interface Env {
   CF_ACCESS_AUD?: string;
   /** Public site origin for CORS (e.g. https://picker.example.com) */
   SITE_ORIGIN?: string;
+  /** Weekly schedule (set by onboard wizard) */
+  SCHEDULE_TIMEZONE?: string;
+  SCHEDULE_ANNOUNCE_WEEKDAY?: string;
+  SCHEDULE_ANNOUNCE_TIME?: string;
+  SCHEDULE_MEET_TIME?: string;
+  SCHEDULE_RATE_OPEN_TIME?: string;
+  SCHEDULE_RATE_CLOSE_TIME?: string;
+  SCHEDULE_HOLIDAY_SHIFT?: string;
 }
 
 export interface Pub {

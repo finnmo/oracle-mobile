@@ -1,11 +1,11 @@
 {
-  "name": "Oracle — Pub of the Week",
-  "short_name": "Oracle",
-  "description": "The Friday pub selector for the group.",
+  "name": "Weekly Picker",
+  "short_name": "Picker",
+  "description": "Vote on where to go each week.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#c5d4cb",
-  "theme_color": "#1a4538",
+  "background_color": "#f5f5f5",
+  "theme_color": "#1f2937",
   "icons": [
     {
       "src": "/icon-192.png",

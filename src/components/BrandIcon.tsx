@@ -6,7 +6,7 @@ interface Props {
   branding: BrandingSettings;
 }
 
-/** Header / mark icon — custom SVG, uploaded image, or default bench. */
+/** Header icon — custom SVG/image from DB, or neutral mark for blank template. */
 export function BrandIcon({ className, branding }: Props) {
   if (branding.iconSvg) {
     return (

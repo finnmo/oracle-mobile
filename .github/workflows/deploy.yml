@@ -1,8 +1,9 @@
 name: Deploy
 
+# Manual only — do not auto-deploy on push (unsafe for a public / shared repo).
+# Run from Actions → Deploy → Run workflow after reviewing the commit you want live.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -16,6 +17,16 @@ jobs:
           cache: 'npm'
 
       - run: npm ci
+
+      - name: Materialize production wrangler.toml
+        env:
+          WRANGLER_TOML: ${{ secrets.WRANGLER_TOML }}
+        run: |
+          if [ -z "$WRANGLER_TOML" ]; then
+            echo "Missing GitHub secret WRANGLER_TOML (full production wrangler.toml contents)."
+            exit 1
+          fi
+          printf '%s\n' "$WRANGLER_TOML" > wrangler.toml
 
       - name: Deploy to Cloudflare Workers
         run: npm run deploy

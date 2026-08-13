@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react';
-import { HistoryRound } from '../types';
-import { fetchHistory } from '../api';
+import { HistoryRound, ScheduleInfo } from '../types';
+import { fetchHistory, fetchStatus } from '../api';
 import PubReviewsList from './PubReviewsList';
 
 export default function HistorySection() {
   const [rounds, setRounds] = useState<HistoryRound[] | null>(null);
   const [loadErr, setLoadErr] = useState(false);
+  const [timezone, setTimezone] = useState('Australia/Perth');
 
   const load = () => {
     setLoadErr(false);
-    fetchHistory()
-      .then((r) => {
+    Promise.all([fetchHistory(), fetchStatus().catch(() => null)])
+      .then(([r, status]) => {
         setRounds(r);
+        const tz = (status?.schedule as ScheduleInfo | undefined)?.timezone;
+        if (tz) setTimezone(tz);
         setLoadErr(false);
       })
       .catch(() => {
@@ -42,23 +45,23 @@ export default function HistorySection() {
       <summary className="history-title">Past Weeks</summary>
       <div className="history-list">
         {rounds.map((r) => (
-          <HistoryItem key={r.weekKey} round={r} />
+          <HistoryItem key={r.weekKey} round={r} timezone={timezone} />
         ))}
       </div>
     </details>
   );
 }
 
-function HistoryItem({ round }: { round: HistoryRound }) {
+function HistoryItem({ round, timezone }: { round: HistoryRound; timezone: string }) {
   const [open, setOpen] = useState(false);
   const panelId = `history-reviews-${round.weekKey}`;
 
   const date = new Date(round.announceAtUtc);
-  const dateStr = date.toLocaleDateString('en-AU', {
+  const dateStr = date.toLocaleDateString(undefined, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
-    timeZone: 'Australia/Perth',
+    timeZone: timezone,
   });
 
   return (

@@ -1,7 +1,8 @@
 import { Env } from '../../types';
 import { json, error } from '../../response';
 import { requireAdmin } from '../../auth';
-import { computeRoundTimingsFromAnchorYmd, getVoteAndRoundAnchorPerthYmd } from '../../timeUtils';
+import { computeRoundTimingsFromAnchorYmd, getVoteAndRoundAnchorYmd } from '../../timeUtils';
+import { getSchedule } from '../../schedule';
 import { pickPubForWeek } from '../../utils/pubPicker';
 
 interface AnnounceBody {
@@ -54,10 +55,11 @@ export async function handleAdminAnnounce(request: Request, env: Env): Promise<R
       'SELECT weekKey FROM rounds WHERE rateCloseAtUtc > ? ORDER BY announceAtUtc DESC LIMIT 1'
     ).bind(nowIso).first<{ weekKey: string }>();
 
-    anchorYmd = activeRound ? activeRound.weekKey : getVoteAndRoundAnchorPerthYmd(nowUtc);
+    anchorYmd = activeRound ? activeRound.weekKey : getVoteAndRoundAnchorYmd(nowUtc, getSchedule(env));
   }
 
-  const timings = computeRoundTimingsFromAnchorYmd(anchorYmd);
+  const schedule = getSchedule(env);
+  const timings = computeRoundTimingsFromAnchorYmd(anchorYmd, schedule);
   const { weekKey } = timings;
 
   // ── 2. Resolve which pub to use ────────────────────────────────────────────

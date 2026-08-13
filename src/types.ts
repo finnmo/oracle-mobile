@@ -25,11 +25,23 @@ export interface RatingStats {
   count: number;
 }
 
+export interface ScheduleInfo {
+  timezone: string;
+  announceWeekday: number;
+  announceWeekdayLabel: string;
+  announceLocalTime: string;
+  meetLocalTime: string;
+  rateOpenLocalTime: string;
+  rateCloseLocalTime: string;
+  holidayShift: 'none' | 'wa';
+}
+
 export interface StatusResponse {
   serverNowUtc: string;
   state: AppState;
   round: Round;
   ratings: RatingStats | null;
+  schedule?: ScheduleInfo;
   userRated?: boolean;
   /** This device's score when userRated (1–5). */
   userScore?: number;

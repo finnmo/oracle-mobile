@@ -20,10 +20,20 @@ simple = { limit = 30, period = 60 }
 
 [vars]
 SITE_ORIGIN = "https://picker.example.com"
+# Weekly schedule (local wall times). Onboard wizard fills these + UTC crons below.
+SCHEDULE_TIMEZONE = "Australia/Perth"
+SCHEDULE_ANNOUNCE_WEEKDAY = "5"
+SCHEDULE_ANNOUNCE_TIME = "10:00"
+SCHEDULE_MEET_TIME = "12:00"
+SCHEDULE_RATE_OPEN_TIME = "12:20"
+SCHEDULE_RATE_CLOSE_TIME = "23:59"
+# "wa" = shift one day earlier when announce weekday is a WA public holiday; "none" = off
+SCHEDULE_HOLIDAY_SHIFT = "none"
 
 [triggers]
+# Generated for the schedule above (UTC). Re-run npm run onboard or edit + convert if you change local times.
 crons = [
-  "0 2 * * THU,FRI",
-  "20 4 * * THU,FRI",
-  "59 15 * * FRI,SAT",
+  "0 2 * * FRI",
+  "20 4 * * FRI",
+  "59 15 * * SAT",
 ]

@@ -5,6 +5,7 @@ interface Props {
   targetUtc: string;
   serverNowUtc: string;
   label: string;
+  timezone?: string;
 }
 
 interface Parts {
@@ -27,23 +28,30 @@ function getParts(targetMs: number, nowMs: number): Parts {
   return { days, hours, minutes, seconds, done: false };
 }
 
-function formatPerthWhen(iso: string): string {
+function formatWhen(iso: string, timeZone: string): string {
   try {
-    return new Intl.DateTimeFormat('en-AU', {
-      timeZone: 'Australia/Perth',
+    const formatted = new Intl.DateTimeFormat(undefined, {
+      timeZone,
       weekday: 'long',
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
-    }).format(new Date(iso)) + ' Perth';
+    }).format(new Date(iso));
+    const shortTz = timeZone.includes('/') ? timeZone.split('/').pop()?.replace(/_/g, ' ') : timeZone;
+    return shortTz ? `${formatted} ${shortTz}` : formatted;
   } catch {
     return '';
   }
 }
 
-export default function CountdownTimer({ targetUtc, serverNowUtc, label }: Props) {
+export default function CountdownTimer({
+  targetUtc,
+  serverNowUtc,
+  label,
+  timezone = 'Australia/Perth',
+}: Props) {
   const offsetRef = useRef<number>(0);
-  const scheduleLine = formatPerthWhen(targetUtc);
+  const scheduleLine = formatWhen(targetUtc, timezone);
   const [parts, setParts] = useState<Parts>(() => {
     const offset = new Date(serverNowUtc).getTime() - Date.now();
     return getParts(new Date(targetUtc).getTime(), Date.now() + offset);

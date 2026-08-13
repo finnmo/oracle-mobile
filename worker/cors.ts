@@ -1,6 +1,7 @@
 import { Env } from './types';
 
-export const DEFAULT_SITE_ORIGIN = 'https://picker.example.com';
+/** Dev/UI proxy default when SITE_ORIGIN is unset (never a production hostname). */
+export const DEFAULT_SITE_ORIGIN = 'http://localhost:5173';
 
 export function siteOrigin(env: Env): string {
   const raw = env.SITE_ORIGIN?.trim();

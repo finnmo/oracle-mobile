@@ -5,6 +5,10 @@ dist/
 .env.local
 .dev.vars
 *.local
+wrangler.toml
 wrangler.sandbox.toml
+.protect-databases
 test.py
 .venv/
+# Private per-deploy backups (venues, branding) — do not publish
+instances/*/

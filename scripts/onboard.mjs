@@ -14,11 +14,27 @@ import {
 } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { randomBytes } from 'node:crypto';
+import {
+  addMinutesHhmm,
+  buildCronBundle,
+  parseHhmmInput,
+  parseWeekdayInput,
+  WEEKDAY_LABELS,
+} from './schedule-lib.mjs';
 
-const ORACLE_DB_ID = '00000000-0000-0000-0000-000000000000';
-const ORACLE_WORKER = 'oracle';
 const SANDBOX = process.argv.includes('--sandbox');
 const CONFIG = SANDBOX ? 'wrangler.sandbox.toml' : 'wrangler.toml';
+
+/** Optional local list of D1 UUIDs never to overwrite (gitignored `.protect-databases`). */
+function protectedDatabaseIds() {
+  if (!existsSync('.protect-databases')) return new Set();
+  return new Set(
+    readFileSync('.protect-databases', 'utf8')
+      .split('\n')
+      .map((line) => line.replace(/#.*/g, '').trim())
+      .filter(Boolean)
+  );
+}
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 
@@ -90,7 +106,17 @@ function putSecret(name, value) {
   }
 }
 
-function patchWrangler({ name, databaseName, databaseId, siteOrigin }) {
+function setTomlVar(content, key, value) {
+  const line = `${key} = "${value}"`;
+  const re = new RegExp(`^${key}\\s*=.*$`, 'm');
+  if (re.test(content)) return content.replace(re, line);
+  if (/\[vars\]/.test(content)) {
+    return content.replace(/\[vars\]/, `[vars]\n${line}`);
+  }
+  return `${content.trimEnd()}\n\n[vars]\n${line}\n`;
+}
+
+function patchWrangler({ name, databaseName, databaseId, siteOrigin, schedule }) {
   let content = readFileSync(CONFIG, 'utf8');
 
   content = content.replace(/^name\s*=.*/m, `name = "${name}"`);
@@ -98,19 +124,38 @@ function patchWrangler({ name, databaseName, databaseId, siteOrigin }) {
   content = content.replace(/database_id\s*=.*/m, `database_id = "${databaseId}"`);
 
   const origin = siteOrigin.replace(/\/$/, '');
-  if (/SITE_ORIGIN\s*=/.test(content)) {
-    content = content.replace(/SITE_ORIGIN\s*=.*/m, `SITE_ORIGIN = "${origin}"`);
-  } else if (/\[vars\]/.test(content)) {
-    content = content.replace(/\[vars\]/, `[vars]\nSITE_ORIGIN = "${origin}"`);
+  content = setTomlVar(content, 'SITE_ORIGIN', origin);
+  content = setTomlVar(content, 'SCHEDULE_TIMEZONE', schedule.timezone);
+  content = setTomlVar(content, 'SCHEDULE_ANNOUNCE_WEEKDAY', String(schedule.announceWeekday));
+  content = setTomlVar(content, 'SCHEDULE_ANNOUNCE_TIME', schedule.announceLocalTime);
+  content = setTomlVar(content, 'SCHEDULE_MEET_TIME', schedule.meetLocalTime);
+  content = setTomlVar(content, 'SCHEDULE_RATE_OPEN_TIME', schedule.rateOpenLocalTime);
+  content = setTomlVar(content, 'SCHEDULE_RATE_CLOSE_TIME', schedule.rateCloseLocalTime);
+  content = setTomlVar(content, 'SCHEDULE_HOLIDAY_SHIFT', schedule.holidayShift);
+
+  const crons = buildCronBundle(schedule);
+  const cronBlock = `[triggers]\ncrons = [\n  "${crons.announce}",\n  "${crons.openRatings}",\n  "${crons.closeRatings}",\n]\n`;
+  if (/\[triggers\][\s\S]*?crons\s*=\s*\[[\s\S]*?\]/.test(content)) {
+    content = content.replace(/\[triggers\][\s\S]*?crons\s*=\s*\[[\s\S]*?\]/, cronBlock.trimEnd());
   } else {
-    content += `\n[vars]\nSITE_ORIGIN = "${origin}"\n`;
+    content = `${content.trimEnd()}\n\n${cronBlock}`;
   }
 
   writeFileSync(CONFIG, content);
+  return crons;
 }
 
-function isOracleProduction(content) {
-  return content.includes(ORACLE_DB_ID) || /^name\s*=\s*"oracle"\s*$/m.test(content);
+function isProtectedExistingConfig(content) {
+  const protectedIds = protectedDatabaseIds();
+  for (const id of protectedIds) {
+    if (content.includes(id)) return true;
+  }
+  // Local maintainer convention: worker name "oracle" means production on this machine.
+  return /^name\s*=\s*"oracle"\s*$/m.test(content);
+}
+
+function isProtectedDatabaseId(id) {
+  return Boolean(id) && protectedDatabaseIds().has(id);
 }
 
 async function main() {
@@ -122,7 +167,7 @@ async function main() {
 
   if (SANDBOX) {
     console.log(`Sandbox mode: writes ${CONFIG} only.
-Oracle production (wrangler.toml / oracle-db / worker "oracle") is left alone.
+Any existing production wrangler.toml is left alone.
 `);
   } else {
     console.log(`This walks you through Cloudflare login, database, secrets,
@@ -134,12 +179,12 @@ and optional deploy. It does NOT delete existing D1 data.
     const hasWrangler = existsSync('wrangler.toml');
     const wranglerContent = hasWrangler ? readFileSync('wrangler.toml', 'utf8') : '';
 
-    if (hasWrangler && isOracleProduction(wranglerContent)) {
-      console.log('Detected Finn\'s Oracle production config in wrangler.toml.');
-      console.log('  • Updating Oracle?          → Y to deploy-only');
-      console.log('  • Your OWN new site (fork)? → N, then Y to overwrite wrangler.toml');
-      console.log('  • Safe trial only?          → Ctrl+C and run: npm run onboard:sandbox\n');
-      if (await yes('Deploy code only to Oracle (safe — keeps all pubs & branding in D1)?', true)) {
+    if (hasWrangler && isProtectedExistingConfig(wranglerContent)) {
+      console.log('Detected a protected production config in wrangler.toml (local guard).');
+      console.log('  • Updating that site?     → Y to deploy-only');
+      console.log('  • Brand-new site (fork)?  → N, then Y to overwrite wrangler.toml');
+      console.log('  • Safe trial only?        → Ctrl+C and run: npm run onboard:sandbox\n');
+      if (await yes('Deploy code only (safe — keeps all pubs & branding in D1)?', true)) {
         if (!wranglerLoggedIn()) run('npx wrangler login');
         run('npm run deploy');
         console.log('\n✓ Deploy complete. Your D1 data was not modified.\n');
@@ -175,12 +220,12 @@ and optional deploy. It does NOT delete existing D1 data.
     console.log('✓ Copied wrangler.toml.example → wrangler.toml');
   }
 
-  const defaultWorker = SANDBOX ? 'oracle-sandbox' : 'my-weekly-picker';
-  const defaultDb = SANDBOX ? 'oracle-sandbox-db' : 'oracle-db';
+  const defaultWorker = SANDBOX ? 'weekly-picker-sandbox' : 'my-weekly-picker';
+  const defaultDb = SANDBOX ? 'weekly-picker-sandbox-db' : 'weekly-picker-db';
 
   let workerName = await ask('Worker name (workers.dev subdomain)', defaultWorker);
-  if (SANDBOX && (workerName === ORACLE_WORKER || workerName === 'oracle')) {
-    console.log(`Refusing worker name "${workerName}" in sandbox — that is production.`);
+  if (SANDBOX && workerName === 'oracle') {
+    console.log('Refusing worker name "oracle" in sandbox — reserved for production.');
     workerName = defaultWorker;
     console.log(`Using ${workerName} instead.`);
   }
@@ -195,7 +240,7 @@ and optional deploy. It does NOT delete existing D1 data.
   const dbName = await ask('D1 database name', defaultDb);
 
   if (SANDBOX && dbName === 'oracle-db') {
-    console.log('Refusing database name "oracle-db" in sandbox — that is production.');
+    console.log('Refusing database name "oracle-db" in sandbox — reserved for production.');
     rl.close();
     process.exit(1);
   }
@@ -205,8 +250,8 @@ and optional deploy. It does NOT delete existing D1 data.
   let databaseId = existing?.uuid;
 
   if (existing) {
-    if (existing.uuid === ORACLE_DB_ID) {
-      console.log('That database is Oracle production. Aborting.');
+    if (isProtectedDatabaseId(existing.uuid)) {
+      console.log('That database is listed in .protect-databases. Aborting.');
       rl.close();
       process.exit(1);
     }
@@ -228,14 +273,57 @@ and optional deploy. It does NOT delete existing D1 data.
     }
   }
 
-  if (databaseId === ORACLE_DB_ID) {
-    console.log('Refusing Oracle production database_id. Aborting.');
+  if (isProtectedDatabaseId(databaseId)) {
+    console.log('Refusing database_id listed in .protect-databases. Aborting.');
     rl.close();
     process.exit(1);
   }
 
-  patchWrangler({ name: workerName, databaseName: dbName, databaseId, siteOrigin });
+  console.log('\n── Weekly schedule ──');
+  console.log('Announce day/time in your local timezone. Ratings open at meet+20 by default.');
+  const timezone = await ask('IANA timezone', 'Australia/Perth');
+  const announceWeekday = parseWeekdayInput(
+    await ask('Announce weekday (Mon–Sun)', 'Friday'),
+    5
+  );
+  const announceLocalTime = parseHhmmInput(await ask('Announce time (HH:MM)', '10:00'), '10:00');
+  const meetLocalTime = parseHhmmInput(await ask('Meet time (HH:MM)', '12:00'), '12:00');
+  const defaultOpen = addMinutesHhmm(meetLocalTime, 20);
+  const rateOpenLocalTime = parseHhmmInput(
+    await ask('Ratings open time (HH:MM)', defaultOpen),
+    defaultOpen
+  );
+  const rateCloseLocalTime = parseHhmmInput(
+    await ask('Ratings close time next day (HH:MM)', '23:59'),
+    '23:59'
+  );
+  let holidayShift = 'none';
+  if (await yes('Shift announce one day earlier when that weekday is a WA public holiday?', false)) {
+    holidayShift = 'wa';
+  }
+
+  const schedule = {
+    timezone,
+    announceWeekday,
+    announceLocalTime,
+    meetLocalTime,
+    rateOpenLocalTime,
+    rateCloseLocalTime,
+    holidayShift,
+  };
+
+  const crons = patchWrangler({
+    name: workerName,
+    databaseName: dbName,
+    databaseId,
+    siteOrigin,
+    schedule,
+  });
   console.log(`✓ Updated ${CONFIG}`);
+  console.log(
+    `  Schedule: ${WEEKDAY_LABELS[announceWeekday]} ${announceLocalTime} (${timezone}), meet ${meetLocalTime}`
+  );
+  console.log(`  Crons (UTC): ${crons.announce} | ${crons.openRatings} | ${crons.closeRatings}`);
 
   if (!SANDBOX && await yes('Apply blank template assets (HTML, icon, manifest)?', true)) {
     run('npm run apply-template');
@@ -292,8 +380,9 @@ and optional deploy. It does NOT delete existing D1 data.
   Worker: https://${workerName}.workers.dev
   Config: ${CONFIG}
   D1:     ${dbName}
+  When:   ${WEEKDAY_LABELS[announceWeekday]} ${announceLocalTime} ${timezone}
 
-${SANDBOX ? `Oracle production was not modified.
+${SANDBOX ? `Existing production configs were not modified.
 Delete this trial later in Cloudflare dashboard (Worker + D1) if you want.
 ` : `Next:
   • Attach custom domain if needed
