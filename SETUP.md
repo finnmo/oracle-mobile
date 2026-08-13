@@ -54,7 +54,7 @@ Everything below is handled by `npm run onboard` unless noted.
 
 | Step | Covered by wizard? | Notes |
 |------|--------------------|-------|
-| Node.js 20+ installed | Prerequisite | [nodejs.org](https://nodejs.org) (LTS) |
+| Node.js 22+ installed | Prerequisite | [nodejs.org](https://nodejs.org) (LTS) — required by Wrangler 4.122 |
 | Cloudflare account | Prerequisite | Free tier is fine |
 | `npm install` | Yes (if needed) | |
 | `wrangler login` | Yes | Opens a browser |
@@ -126,7 +126,7 @@ If `npm run icons` fails on Windows, install [Visual C++ Build Tools](https://vi
 ### 1. Prerequisites
 
 - Cloudflare account
-- Node.js 20+
+- Node.js 22+
 - This repo cloned
 
 ### 2. Configure
@@ -213,7 +213,7 @@ Open http://localhost:5173/admin
 
 ## Checklist (brand-new site)
 
-- [ ] Node 20+ and Cloudflare account
+- [ ] Node 22+ and Cloudflare account
 - [ ] `npm install`
 - [ ] `npm run onboard` completed (own Worker + D1 + password)
 - [ ] Site opens on `workers.dev` (or custom domain)
