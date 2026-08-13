@@ -1,4 +1,5 @@
 import { Env } from '../types';
+import { siteOrigin } from '../cors';
 import { buildStatus } from './status';
 
 // SSE endpoint — streams status updates to the client in real-time.
@@ -38,7 +39,7 @@ export async function handleEvents(_req: Request, env: Env): Promise<Response> {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': 'https://picker.example.com',
+      'Access-Control-Allow-Origin': siteOrigin(env),
     },
   });
 }

@@ -119,44 +119,19 @@ export function clearAdminToken(): void {
   sessionStorage.removeItem('oracle_admin_token');
 }
 
-function getAccessJwt(): string | null {
-  return sessionStorage.getItem('oracle_access_jwt');
-}
-
-export function clearAccessJwt(): void {
-  sessionStorage.removeItem('oracle_access_jwt');
-}
-
-/** Bypasses Cloudflare Access when /api/admin is still gated there. */
-const WORKERS_DEV_ADMIN = 'https://oracle.example-account.workers.dev/api/admin';
-
 async function parseAdminResponse(res: Response, hadToken: boolean): Promise<{ res: Response; data: unknown }> {
-  if (res.status >= 300 && res.status < 400) {
-    throw new Error(
-      'Admin sign-in required — open /admin and sign in with Google. ' +
-      'If you use an API token, remove /api/admin from Cloudflare Access (protect /admin only).'
-    );
-  }
-
   const text = await res.text();
   let data: unknown = {};
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
-    if (text.includes('cloudflareaccess') || text.includes('Sign in') || text.includes('302 Found')) {
-      throw new Error(
-        'Cloudflare Access blocked the admin API — protect only /admin (not /api/admin), then retry.'
-      );
-    }
     const snippet = text.replace(/\s+/g, ' ').slice(0, 80);
     throw new Error(`Admin API returned non-JSON (${res.status})${snippet ? `: ${snippet}` : ''}`);
   }
 
   if (res.status === 401 || res.status === 403) {
     if (hadToken) clearAdminToken();
-    throw new Error(
-      'Unauthorized — open /admin and sign in with Google, or use a valid API token below.'
-    );
+    throw new Error('Unauthorized — enter the admin password, or use a valid API token');
   }
   if (!res.ok) throw new Error((data as Record<string, string>).error ?? 'Request failed');
   return { res, data };
@@ -164,47 +139,57 @@ async function parseAdminResponse(res: Response, hadToken: boolean): Promise<{ r
 
 async function adminFetch(path: string, options: RequestInit = {}): Promise<{ res: Response; data: unknown }> {
   const apiToken = (getAdminToken() ?? '').replace(/[^\x20-\x7E]/g, '');
-  const accessJwt = getAccessJwt();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> | undefined),
   };
   if (apiToken) {
     headers.Authorization = `Bearer ${apiToken}`;
-  } else if (accessJwt) {
-    headers['Cf-Access-Jwt-Assertion'] = accessJwt;
   }
-
-  const fetchOpts: RequestInit = {
-    ...options,
-    redirect: 'manual',
-    headers,
-  };
-
-  const onCustomDomain =
-    typeof window !== 'undefined' && window.location.hostname === 'picker.example.com';
 
   try {
     const res = await fetch(`/api/admin${path}`, {
-      ...fetchOpts,
+      ...options,
+      headers,
       credentials: 'include',
     });
-
-    // Access returns 302 before the Worker can read Bearer — fall back to workers.dev with API token only.
-    if (res.status >= 300 && res.status < 400 && apiToken && onCustomDomain) {
-      const remote = await fetch(`${WORKERS_DEV_ADMIN}${path}`, {
-        ...fetchOpts,
-        credentials: 'omit',
-      });
-      return parseAdminResponse(remote, Boolean(apiToken));
-    }
-
     return parseAdminResponse(res, Boolean(apiToken));
   } catch (err) {
     if (err instanceof TypeError) {
       throw new Error('Could not reach admin API — check your connection and try again');
     }
     throw err;
+  }
+}
+
+export async function adminLogin(password: string): Promise<void> {
+  const res = await fetch('/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ password }),
+  });
+  const text = await res.text();
+  let data: { error?: string } = {};
+  try {
+    data = text ? JSON.parse(text) as { error?: string } : {};
+  } catch {
+    throw new Error(`Login failed (${res.status})`);
+  }
+  if (!res.ok) throw new Error(data.error ?? 'Wrong password');
+}
+
+export async function adminLogout(): Promise<void> {
+  clearAdminToken();
+  try {
+    await fetch('/api/admin/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: '{}',
+    });
+  } catch {
+    // Cookie clear is best-effort
   }
 }
 

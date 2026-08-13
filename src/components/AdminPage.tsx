@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { AdminPub } from '../types';
 import {
   getAdminToken, setAdminToken, clearAdminToken,
+  adminLogin, adminLogout,
   adminAnnounce, adminReset, adminOpenRatings, adminCloseRatings,
   adminListPubs, adminAddPub, adminUpdatePub, adminDeletePub,
-  adminGetBranding, adminUpdateBranding, clearAccessJwt,
+  adminGetBranding, adminUpdateBranding,
 } from '../api';
 import { useBranding } from '../context/BrandingContext';
 import { BrandIcon } from './BrandIcon';
@@ -20,6 +21,8 @@ export default function AdminPage({ onBack }: Props) {
   const [authed, setAuthed] = useState(false);
   const [checking, setChecking] = useState(true);
   const [authErr, setAuthErr] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
   const [showTokenFallback, setShowTokenFallback] = useState(false);
   const [token, setToken] = useState(getAdminToken() ?? '');
 
@@ -31,7 +34,9 @@ export default function AdminPage({ onBack }: Props) {
       setAuthed(true);
     } catch (e) {
       setAuthed(false);
-      setAuthErr(e instanceof Error ? e.message : 'Could not reach admin API');
+      // Don't show probe error on first load — password form is enough
+      const msg = e instanceof Error ? e.message : 'Could not reach admin API';
+      if (!msg.includes('Unauthorized')) setAuthErr(msg);
     } finally {
       setChecking(false);
     }
@@ -41,6 +46,23 @@ export default function AdminPage({ onBack }: Props) {
     probeAuth();
   }, [probeAuth]);
 
+  const handlePasswordLogin = async () => {
+    if (!password || loggingIn) return;
+    setLoggingIn(true);
+    setAuthErr(null);
+    try {
+      clearAdminToken();
+      await adminLogin(password);
+      setPassword('');
+      await probeAuth();
+    } catch (e) {
+      setAuthed(false);
+      setAuthErr(e instanceof Error ? e.message : 'Login failed');
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
   const handleTokenLogin = () => {
     const t = token.trim().replace(/[^\x20-\x7E]/g, '');
     if (!t) return;
@@ -48,11 +70,11 @@ export default function AdminPage({ onBack }: Props) {
     probeAuth();
   };
 
-  const handleLogout = () => {
-    clearAdminToken();
-    clearAccessJwt();
+  const handleLogout = async () => {
+    await adminLogout();
     setAuthed(false);
     setToken('');
+    setPassword('');
   };
 
   return (
@@ -82,16 +104,27 @@ export default function AdminPage({ onBack }: Props) {
         {!checking && !authed && (
           <div className="card">
             <div className="card-label">Admin access</div>
+            <p className="text-muted" style={{ marginBottom: 12, fontSize: 14, lineHeight: 1.45 }}>
+              Enter the admin password set for this site.
+            </p>
             {authErr && (
               <p className="inline-error" style={{ marginBottom: 12 }}>{authErr}</p>
             )}
-            {!authErr && (
-              <p className="inline-error" style={{ marginBottom: 12 }}>
-                Error — contact the site admin.
-              </p>
-            )}
-            <button className="btn btn-primary btn-full" onClick={() => { window.location.href = '/admin'; }}>
-              Retry
+            <input
+              type="password"
+              className="admin-input"
+              placeholder="Password"
+              value={password}
+              autoComplete="current-password"
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handlePasswordLogin()}
+            />
+            <button
+              className="btn btn-primary btn-full"
+              onClick={handlePasswordLogin}
+              disabled={loggingIn || !password}
+            >
+              {loggingIn ? 'Signing in…' : 'Sign in'}
             </button>
 
             <details
@@ -104,7 +137,7 @@ export default function AdminPage({ onBack }: Props) {
               <input
                 type="password"
                 className="admin-input"
-                placeholder="Admin token"
+                placeholder="Admin API token"
                 value={token}
                 onChange={e => setToken(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleTokenLogin()}

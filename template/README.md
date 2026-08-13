@@ -3,11 +3,10 @@
 Copy these into the project root when deploying a **new** site (not picker.example.com):
 
 ```bash
-cp template/index.html index.html
-cp template/manifest.json public/manifest.json
-cp template/icon.svg public/icon.svg
-npm run icons
+npm run apply-template
 ```
+
+Works on Windows, macOS, and Linux.
 
 Then set branding in `/admin` after first deploy, or rely on API defaults (`Weekly Picker`, neutral gray).
 

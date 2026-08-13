@@ -4,13 +4,17 @@ interface RateLimit {
 
 export interface Env {
   DB: D1Database;
-  ADMIN_API_TOKEN: string;
+  /** Optional: Bearer token for curl / scripts */
+  ADMIN_API_TOKEN?: string;
+  /** Admin login password (required for /admin password form) */
+  ADMIN_PASSWORD?: string;
   ASSETS: Fetcher;
   RATE_LIMITER: RateLimit;
-  /** e.g. https://yourteam.cloudflareaccess.com — optional for local Bearer-only admin */
+  /** Optional Cloudflare Access (legacy) */
   CF_ACCESS_TEAM_DOMAIN?: string;
-  /** Access Application Audience (AUD) tag */
   CF_ACCESS_AUD?: string;
+  /** Public site origin for CORS (e.g. https://picker.example.com) */
+  SITE_ORIGIN?: string;
 }
 
 export interface Pub {

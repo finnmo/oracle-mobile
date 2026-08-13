@@ -1,11 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { requireAdmin, sha256 } from './auth';
+import {
+  requireAdmin,
+  sha256,
+  createSessionToken,
+  verifySessionToken,
+  sessionSetCookie,
+  SESSION_COOKIE,
+} from './auth';
 import type { Env } from './types';
 
 function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
     DB: {} as D1Database,
     ADMIN_API_TOKEN: 'secret-token',
+    ADMIN_PASSWORD: 'correct-horse',
     ASSETS: {} as Fetcher,
     RATE_LIMITER: { limit: async () => ({ success: true }) },
     ...overrides,
@@ -29,11 +37,55 @@ describe('requireAdmin Bearer', () => {
     expect(res!.status).toBe(401);
   });
 
-  it('rejects missing Authorization when Access is not configured', async () => {
+  it('rejects missing Authorization when no session', async () => {
     const req = new Request('https://example.com/api/admin/pubs');
     const res = await requireAdmin(req, makeEnv());
     expect(res).not.toBeNull();
     expect(res!.status).toBe(401);
+  });
+});
+
+describe('requireAdmin session cookie', () => {
+  it('allows a valid session cookie', async () => {
+    const env = makeEnv();
+    const token = await createSessionToken(env);
+    expect(token).toBeTruthy();
+    const req = new Request('https://example.com/api/admin/pubs', {
+      headers: { Cookie: `${SESSION_COOKIE}=${token}` },
+    });
+    expect(await requireAdmin(req, env)).toBeNull();
+  });
+
+  it('rejects a tampered session cookie', async () => {
+    const env = makeEnv();
+    const token = await createSessionToken(env);
+    const tampered = token!.slice(0, -4) + 'dead';
+    const req = new Request('https://example.com/api/admin/pubs', {
+      headers: { Cookie: `${SESSION_COOKIE}=${tampered}` },
+    });
+    const res = await requireAdmin(req, env);
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(401);
+  });
+
+  it('verifySessionToken rejects expired tokens', async () => {
+    const env = makeEnv();
+    const ok = await verifySessionToken('v1.1.abcdef', env);
+    expect(ok).toBe(false);
+  });
+});
+
+describe('sessionSetCookie', () => {
+  it('adds Secure on https', () => {
+    const header = sessionSetCookie('v1.1.abc', 'https://example.com/admin');
+    expect(header).toContain('Secure');
+    expect(header).toContain('HttpOnly');
+    expect(header).toContain(SESSION_COOKIE);
+  });
+
+  it('omits Secure on http (local wrangler)', () => {
+    const header = sessionSetCookie('v1.1.abc', 'http://localhost:8787/admin');
+    expect(header).not.toContain('Secure');
   });
 });
 

@@ -19,7 +19,7 @@ namespace_id = "1001"
 simple = { limit = 30, period = 60 }
 
 [vars]
-CF_ACCESS_TEAM_DOMAIN = "https://YOURTEAM.cloudflareaccess.com"
+SITE_ORIGIN = "https://picker.example.com"
 
 [triggers]
 crons = [

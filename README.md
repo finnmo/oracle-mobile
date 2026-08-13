@@ -4,8 +4,8 @@ This repository deploys **https://picker.example.com** — the Oracle pub-of-the
 
 | Goal | Action |
 |------|--------|
-| Ship code to Oracle production | `npm run deploy` — see [instances/oracle-finn-morris/README.md](instances/oracle-finn-morris/README.md) |
-| Deploy a **new** blank site elsewhere | [SETUP.md](SETUP.md) + `template/` + `wrangler.toml.example` |
+| Ship code to Oracle production | `npm run onboard` (deploy-only) or `npm run deploy` |
+| Deploy a **new** blank site elsewhere | `npm run onboard` or [SETUP.md](SETUP.md) |
 
 Forkers get a blank template (`seed.sql` empty, API defaults = “Weekly Picker”). Oracle keeps its DB branding and pubs.
 
@@ -29,9 +29,8 @@ No user login on the public site. Each phone gets a random `deviceId` in `localS
 
 ```bash
 npm install          # once
-npm run setup        # create production DB tables (empty — no venues)
-npm run deploy       # build + publish
-npm run first-deploy # setup + deploy
+npm run onboard      # interactive wizard (new site or Oracle deploy-only)
+npm run deploy       # build + publish only
 ```
 
 Customize in the browser: **`/admin`** → Site branding + Pub management.
@@ -61,27 +60,29 @@ npm run dev:worker   # API on :8787
 npm run dev:ui       # UI on :5173 (proxies /api)
 ```
 
-Admin on localhost: http://localhost:5173/admin — use **API token** (Access only applies on your production domain).
+Admin on localhost: http://localhost:5173/admin — set `ADMIN_PASSWORD` in `.dev.vars`, then sign in with that password.
 
 ---
 
-## Cloudflare Access (admin)
+## Admin auth
 
-Protect **only** `/admin` and `/admin/*`. Do **not** put `/api/admin` behind Access.
+Primary: **password** (`ADMIN_PASSWORD` Worker secret) → HttpOnly session cookie (14 days).
 
-1. Zero Trust → Access → Self-hosted app for your domain
-2. Paths: `/admin`, `/admin/*`
-3. Google login + allowlist policy
-4. `npx wrangler secret put CF_ACCESS_AUD` (Application Audience tag)
-5. Set `CF_ACCESS_TEAM_DOMAIN` in `wrangler.toml`
+Optional: Bearer `ADMIN_API_TOKEN` for curl/scripts.
 
-Details and troubleshooting: **[SETUP.md](SETUP.md)**.
+Cloudflare Access is **not required**. If you still have an Access app on `/admin`, disable it so the password form works.
+
+```bash
+npx wrangler secret put ADMIN_PASSWORD
+# optional:
+npx wrangler secret put ADMIN_API_TOKEN
+```
 
 ---
 
 ## Admin API (scripts / token)
 
-Bearer `ADMIN_API_TOKEN` or Access JWT after `/admin` login.
+Bearer `ADMIN_API_TOKEN`, or session cookie after `/admin` password login.
 
 ```bash
 BASE="https://your-domain.com"

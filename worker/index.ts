@@ -1,5 +1,6 @@
 import { Env } from './types';
-import { cors, error } from './response';
+import { corsPreflight, withCors } from './cors';
+import { error } from './response';
 import { handleStatus } from './handlers/status';
 import { handleRatings } from './handlers/ratings';
 import { handlePubs } from './handlers/pubs';
@@ -16,6 +17,7 @@ import { handlePubComments } from './handlers/pub-comments';
 import { handleEvents } from './handlers/events';
 import { handleBranding } from './handlers/branding';
 import { handleAdminBranding } from './handlers/admin/branding';
+import { handleAdminLogin, handleAdminLogout } from './handlers/admin/login';
 import { serveAdminShell } from './adminShell';
 import { handleCron } from './cron/friday';
 
@@ -26,33 +28,38 @@ export default {
     const path = url.pathname;
 
     // CORS preflight
-    if (method === 'OPTIONS') return cors();
+    if (method === 'OPTIONS') return corsPreflight(env);
 
     // API routing
     if (path.startsWith('/api/')) {
       try {
-        if (path === '/api/status'               && method === 'GET')  return handleStatus(request, env);
-        if (path === '/api/events'               && method === 'GET')  return handleEvents(request, env);
-        if (path === '/api/pubs'                 && method === 'GET')  return handlePubs(request, env);
-        if (path === '/api/rounds'               && method === 'GET')  return handleRounds(request, env);
-        if (path === '/api/stats'                && method === 'GET')  return handleStats(request, env);
-        if (path === '/api/branding'             && method === 'GET')  return handleBranding(request, env);
+        if (path === '/api/status'               && method === 'GET')  return withCors(await handleStatus(request, env), env);
+        if (path === '/api/events'               && method === 'GET')  return withCors(await handleEvents(request, env), env);
+        if (path === '/api/pubs'                 && method === 'GET')  return withCors(await handlePubs(request, env), env);
+        if (path === '/api/rounds'               && method === 'GET')  return withCors(await handleRounds(request, env), env);
+        if (path === '/api/stats'                && method === 'GET')  return withCors(await handleStats(request, env), env);
+        if (path === '/api/branding'             && method === 'GET')  return withCors(await handleBranding(request, env), env);
         if (path.match(/^\/api\/pubs\/[^/]+\/comments$/) && method === 'GET')
-          return handlePubComments(request, env);
-        if (path === '/api/votes')                                     return handleVotes(request, env);
-        if (path === '/api/vetoes'               && method === 'POST') return handleVetoes(request, env);
-        if (path === '/api/ratings'              && method === 'POST') return handleRatings(request, env);
-        if (path === '/api/admin/announce'       && method === 'POST') return handleAdminAnnounce(request, env);
-        if (path === '/api/admin/open-ratings'   && method === 'POST') return handleAdminOpenRatings(request, env);
-        if (path === '/api/admin/close-ratings'  && method === 'POST') return handleAdminCloseRatings(request, env);
-        if (path === '/api/admin/reset'          && method === 'POST') return handleAdminReset(request, env);
-        if (path.startsWith('/api/admin/pubs'))                        return handleAdminPubs(request, env);
-        if (path === '/api/admin/branding')                            return handleAdminBranding(request, env);
+          return withCors(await handlePubComments(request, env), env);
+        if (path === '/api/votes') {
+          const res = await handleVotes(request, env);
+          return withCors(res, env);
+        }
+        if (path === '/api/vetoes'               && method === 'POST') return withCors(await handleVetoes(request, env), env);
+        if (path === '/api/ratings'              && method === 'POST') return withCors(await handleRatings(request, env), env);
+        if (path === '/api/admin/login'          && method === 'POST') return withCors(await handleAdminLogin(request, env), env);
+        if (path === '/api/admin/logout'         && method === 'POST') return withCors(await handleAdminLogout(request, env), env);
+        if (path === '/api/admin/announce'       && method === 'POST') return withCors(await handleAdminAnnounce(request, env), env);
+        if (path === '/api/admin/open-ratings'   && method === 'POST') return withCors(await handleAdminOpenRatings(request, env), env);
+        if (path === '/api/admin/close-ratings'  && method === 'POST') return withCors(await handleAdminCloseRatings(request, env), env);
+        if (path === '/api/admin/reset'          && method === 'POST') return withCors(await handleAdminReset(request, env), env);
+        if (path.startsWith('/api/admin/pubs'))                        return withCors(await handleAdminPubs(request, env), env);
+        if (path === '/api/admin/branding')                            return withCors(await handleAdminBranding(request, env), env);
 
-        return error('Not found', 404);
+        return withCors(error('Not found', 404), env);
       } catch (err) {
         console.error('Unhandled API error:', err);
-        return error('Internal server error', 500);
+        return withCors(error('Internal server error', 500), env);
       }
     }
 
