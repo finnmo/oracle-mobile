@@ -11,6 +11,8 @@ wrangler.sandbox.toml
 wrangler.json
 wrangler.jsonc
 .protect-databases
+.sandbox-admin-password.txt
+.admin-password.txt
 test.py
 .venv/
 # Private per-deploy backups (venues, branding) — do not publish

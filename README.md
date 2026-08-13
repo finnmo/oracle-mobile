@@ -5,7 +5,7 @@ Blank Cloudflare template for a login-free weekly venue picker: vote during the 
 | Goal | Action |
 |------|--------|
 | New site on your Cloudflare account | `npm run onboard` or [SETUP.md](SETUP.md) |
-| Safe trial without touching an existing Worker | `npm run onboard:sandbox` |
+| Safe trial without touching an existing Worker | `npm run onboard:sandbox` (auto defaults after Cloudflare login) |
 | Ship code (local) | `npm run deploy` (needs your own `wrangler.toml`) |
 | Ship production via GitHub | Actions → **Deploy** → Run workflow (manual only) |
 
@@ -28,13 +28,13 @@ No user login on the public site. Each phone gets a random `deviceId` in `localS
 ## Quick commands
 
 ```bash
-npm install          # once
-cp wrangler.toml.example wrangler.toml   # then fill database_id + SITE_ORIGIN
-npm run onboard      # interactive wizard (creates config if missing)
-npm run deploy       # build + publish only
+npm install              # once
+npm run onboard:sandbox  # safe trial — auto defaults, prints Site + Admin password
+npm run onboard          # interactive wizard for a real site (creates wrangler.toml)
+npm run deploy           # build + publish only (needs wrangler.toml)
 ```
 
-`wrangler.toml` is **gitignored** — never commit production IDs or hostnames. Customize in the browser: **`/admin`** → Site branding + venue management.
+`wrangler.toml` / `wrangler.sandbox.toml` are **gitignored** — never commit production IDs or hostnames. Customize in the browser: **`/admin`** → Site branding + venue management.
 
 ---
 

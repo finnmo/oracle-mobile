@@ -24,9 +24,26 @@ Same commands in **PowerShell**, **Command Prompt**, or **Terminal**.
 The wizard: Cloudflare login → create Worker + D1 → admin password → empty tables → deploy.  
 No Cloudflare Access / Google SSO setup required.
 
+### Trial / sandbox (non-technical — one command)
+
+Safe path that **never** edits `wrangler.toml` or production Worker/D1 names:
+
+```bash
+npm install
+npm run onboard:sandbox
+```
+
+What it asks you (only the important bits):
+
+1. **Timezone**, **announce weekday**, **announce time** — meet + ratings times are derived (ratings close the next day)
+2. **Admin password** — type one, or press Enter to auto-generate
+
+Everything else (Worker/D1 names, schema, deploy, SITE_ORIGIN fix) is automatic. Then open the printed Site/Admin URLs.
+
 | Goal | Command |
 |------|---------|
 | New site on your account | `npm run onboard` |
+| New site with auto defaults | `npm run onboard -- --yes` |
 | Trial without touching production config | `npm run onboard:sandbox` |
 | Update an existing protected site | keep local `wrangler.toml` → `npm run onboard` → deploy-only |
 
@@ -62,9 +79,10 @@ Everything below is handled by `npm run onboard` unless noted.
 | Blank template (title/icon) | Yes (optional prompt) | |
 | Create D1 database | Yes | |
 | Write `database_id` + `SITE_ORIGIN` + schedule | Yes | Timezone, announce day/time, meet, ratings |
-| Cron schedules | Yes | Generated from your local times → UTC |
-| `ADMIN_PASSWORD` secret | Yes | Password for `/admin` |
-| Optional `ADMIN_API_TOKEN` | Yes (optional) | For curl/scripts |
+| Real `*.account.workers.dev` SITE_ORIGIN | Yes | Parsed from deploy output; redeployed if needed |
+| Cron schedules | Yes | Generated from local times → UTC; auto-clears if Free-plan cron limit hits |
+| `ADMIN_PASSWORD` secret | Yes | Password for `/admin` (also written to `.admin-password.txt` / `.sandbox-admin-password.txt`) |
+| Optional `ADMIN_API_TOKEN` | Yes (optional; skipped in sandbox auto mode) | For curl/scripts |
 | Apply `schema.sql` (empty tables) | Yes | No venues until you add them |
 | `npm run build` + deploy | Yes | |
 | Custom domain | Manual (optional) | `workers.dev` URL works immediately |
@@ -84,12 +102,19 @@ Everything below is handled by `npm run onboard` unless noted.
 The onboard wizard asks for:
 
 1. **Timezone** (IANA, e.g. `Australia/Perth`, `Europe/London`)
-2. **Announce weekday** + **time**
-3. **Meet time**
-4. **Ratings open** (default meet + 20 minutes) and **close** (default 23:59 next day)
-5. Optional **WA public-holiday shift** (off by default)
+2. **Announce weekday** + **time** (when the pub is revealed)
 
-These become `SCHEDULE_*` vars in `wrangler.toml` plus matching UTC crons. Change later by editing those vars and regenerating crons (or re-running onboard for a new site).
+It then **derives** the rest (you can customize):
+
+| Event | Default derivation |
+|-------|--------------------|
+| Meet | 12:00 if announce is before noon (e.g. 09:00 → 12:00); otherwise announce + 2h |
+| Ratings open | Meet + 20 minutes (same day as announce) |
+| Ratings close | 23:59 the **next** calendar day (Thu announce → Fri close) |
+
+Optional: WA public-holiday shift (off by default).
+
+These become `SCHEDULE_*` vars plus matching UTC crons. Change later by editing those vars and regenerating crons (or re-running onboard for a new site).
 
 If your timezone observes daylight saving, UTC cron hours can drift when clocks change — re-run onboard schedule generation (or edit the three cron lines) after the switch.
 

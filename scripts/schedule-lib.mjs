@@ -43,6 +43,48 @@ export function addMinutesHhmm(hhmm, minutes) {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
+function hhmmToMinutes(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function minutesToHhmm(total) {
+  const mins = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Derive meet / ratings-open / ratings-close from the announce clock time.
+ *
+ * Rules (matches product defaults + common “announce morning → noon meetup”):
+ * - Meet at 12:00 when announce is before noon (e.g. 09:00 → meet 12:00)
+ * - Otherwise meet = announce + 2 hours
+ * - Ratings open = meet + 20 minutes (same calendar day as announce)
+ * - Ratings close = 23:59 the next calendar day (cron weekday = announce + 1)
+ */
+export function deriveRelatedTimes(announceLocalTime) {
+  const announceMins = hhmmToMinutes(announceLocalTime);
+  const noon = 12 * 60;
+  let meetMins;
+  if (announceMins < noon) {
+    meetMins = noon;
+  } else {
+    meetMins = announceMins + 120;
+    if (meetMins >= 24 * 60) {
+      // Late announce: open ratings 30 minutes after announce same evening
+      meetMins = announceMins + 30;
+      if (meetMins >= 24 * 60) meetMins = 23 * 60 + 30;
+    }
+  }
+  const meetLocalTime = minutesToHhmm(meetMins);
+  const rateOpenLocalTime = addMinutesHhmm(meetLocalTime, 20);
+  return {
+    meetLocalTime,
+    rateOpenLocalTime,
+    rateCloseLocalTime: '23:59',
+  };
+}
+
 function formatParts(utc, timeZone) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -117,6 +159,7 @@ export function buildCronBundle(schedule, from = new Date()) {
     schedule.holidayShift === 'wa'
       ? [(schedule.announceWeekday + 6) % 7, schedule.announceWeekday]
       : [schedule.announceWeekday];
+  // Ratings close the calendar day after each announce day (Thu announce → Fri close).
   const closeDays = announceDays.map((d) => (d + 1) % 7);
 
   const announceUtc = sampleLocalToUtcHm(schedule.timezone, schedule.announceWeekday, schedule.announceLocalTime, from);
@@ -133,6 +176,18 @@ export function buildCronBundle(schedule, from = new Date()) {
     openRatings: `${openUtc.minute} ${openUtc.hour} * * ${cronWeekdayList(announceDays)}`,
     closeRatings: `${closeUtc.minute} ${closeUtc.hour} * * ${cronWeekdayList(closeDays)}`,
   };
+}
+
+/** Human-readable summary of announce → meet → ratings for the wizard. */
+export function formatScheduleSummary(schedule) {
+  const day = WEEKDAY_LABELS[schedule.announceWeekday];
+  const next = WEEKDAY_LABELS[(schedule.announceWeekday + 1) % 7];
+  return [
+    `Announce:  ${day} ${schedule.announceLocalTime}`,
+    `Meet:      ${day} ${schedule.meetLocalTime}`,
+    `Ratings:   open ${day} ${schedule.rateOpenLocalTime} → close ${next} ${schedule.rateCloseLocalTime}`,
+    `Timezone:  ${schedule.timezone}`,
+  ].join('\n');
 }
 
 export const WEEKDAY_LABELS = [
