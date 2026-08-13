@@ -201,20 +201,49 @@ function wranglerLoggedIn() {
   }
 }
 
+/** Extract JSON when wrangler appends ANSI warnings after the payload. */
+function parseJsonPayload(text) {
+  const raw = String(text ?? '');
+  const start = raw.search(/[\[{]/);
+  if (start < 0) throw new Error('No JSON in wrangler output');
+  const sliced = raw.slice(start);
+  try {
+    return JSON.parse(sliced);
+  } catch {
+    // Trailing noise after a top-level array/object — trim to last matching closer.
+    const open = sliced[0];
+    const close = open === '[' ? ']' : '}';
+    const end = sliced.lastIndexOf(close);
+    if (end < 0) throw new Error('No JSON in wrangler output');
+    return JSON.parse(sliced.slice(0, end + 1));
+  }
+}
+
 function listD1() {
   try {
-    return JSON.parse(wranglerCapture(['d1', 'list', '--json']));
+    const result = wranglerSync(['d1', 'list', '--json']);
+    // JSON is on stdout; warnings land on stderr — never merge before parse.
+    const payload = (result.stdout || '').trim();
+    if (!payload) return [];
+    if ((result.status ?? 1) !== 0) return [];
+    return parseJsonPayload(payload);
   } catch {
     return [];
   }
 }
 
 function createD1(name) {
-  const out = wranglerCapture(['d1', 'create', name]);
+  const result = wranglerSync(['d1', 'create', name]);
+  const out = `${result.stdout || ''}${result.stderr || ''}`;
   const match = out.match(/database_id\s*=\s*"([^"]+)"/);
   if (match) return match[1];
-  const list = listD1().find((db) => db.name === name);
-  return list?.uuid ?? null;
+
+  // Already exists (or create output lacked the id) — resolve via list.
+  if ((result.status ?? 1) !== 0 && !/already exists/i.test(out)) {
+    throw new Error(out.trim() || `Failed to create D1 database ${name}`);
+  }
+  const listed = listD1().find((db) => db.name === name);
+  return listed?.uuid ?? null;
 }
 
 function putSecret(name, value) {
