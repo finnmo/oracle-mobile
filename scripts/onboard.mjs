@@ -17,6 +17,7 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { randomBytes } from 'node:crypto';
 import {
@@ -24,13 +25,21 @@ import {
   buildCronBundle,
   deriveRelatedTimes,
   formatScheduleSummary,
-  parseHhmmInput,
-  parseWeekdayInput,
+  isValidIanaTimeZone,
+  parseHhmmStrict,
+  parseWeekdayStrict,
   WEEKDAY_LABELS,
 } from './schedule-lib.mjs';
 import {
   extractWorkersDevUrl,
   isCronLimitError,
+  isValidDatabaseId,
+  isValidOptionalPassword,
+  isValidResourceName,
+  isValidSiteOrigin,
+  normalizeResourceName,
+  normalizeSiteOrigin,
+  parseYesNo,
   setCronBlock,
   setTomlVar,
   shouldSyncSiteOriginToWorkersDev,
@@ -60,88 +69,132 @@ function protectedDatabaseIds() {
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 
-function ask(question, defaultValue = '') {
-  if (AUTO) {
-    const shown = defaultValue || '(none)';
-    console.log(`${question}: ${shown}`);
-    return Promise.resolve(defaultValue);
-  }
-  const suffix = defaultValue ? ` [${defaultValue}]` : '';
+function readLine(promptText) {
   return new Promise((resolve) => {
-    rl.question(`${question}${suffix}: `, (answer) => {
-      const trimmed = answer.trim();
-      resolve(trimmed || defaultValue);
-    });
+    rl.question(promptText, (answer) => resolve(answer));
   });
 }
 
-/** Always prompt unless `--yes` (used for schedule + admin password). */
-function askHuman(question, defaultValue = '') {
-  if (YES) {
-    const shown = defaultValue || '(none)';
-    console.log(`${question}: ${shown}`);
-    return Promise.resolve(defaultValue);
+/**
+ * Prompt with example + default; validate and retry on invalid input.
+ * @param {object} opts
+ * @param {string} opts.question
+ * @param {string} [opts.example] shown as "example: …"
+ * @param {string} [opts.defaultValue] Enter accepts this
+ * @param {(raw: string) => { ok: true, value: any } | { ok: false, error: string }} opts.validate
+ * @param {boolean} [opts.human] if true, only skipped by --yes (not by sandbox AUTO)
+ */
+async function askValidated({ question, example = '', defaultValue = '', validate, human = false }) {
+  const skip = human ? YES : AUTO;
+  if (skip) {
+    const raw = defaultValue;
+    const result = validate(raw);
+    if (!result.ok) {
+      throw new Error(`Invalid default for "${question}": ${result.error}`);
+    }
+    console.log(`${question}: ${result.value === '' ? '(none)' : result.value}${example ? `  (example: ${example})` : ''}`);
+    return result.value;
   }
-  const suffix = defaultValue ? ` [${defaultValue}]` : '';
-  return new Promise((resolve) => {
-    rl.question(`${question}${suffix}: `, (answer) => {
-      const trimmed = answer.trim();
-      resolve(trimmed || defaultValue);
-    });
+
+  for (;;) {
+    const parts = [question];
+    if (example) parts.push(`example: ${example}`);
+    if (defaultValue !== '') parts.push(`default: ${defaultValue}`);
+    const promptText = `${parts.join(' · ')}: `;
+    const raw = await readLine(promptText);
+    const trimmed = raw.trim();
+    const candidate = trimmed === '' ? defaultValue : trimmed;
+    const result = validate(candidate);
+    if (result.ok) return result.value;
+    console.log(`  ✗ ${result.error} Try again.`);
+  }
+}
+
+async function yesValidated(question, defaultYes = true, { human = false, example = 'y' } = {}) {
+  const value = await askValidated({
+    question,
+    example,
+    defaultValue: defaultYes ? 'y' : 'n',
+    human,
+    validate: (raw) => {
+      const parsed = parseYesNo(raw, defaultYes);
+      if (!parsed.ok) {
+        return { ok: false, error: 'Please answer y or n (yes/no also fine).' };
+      }
+      return { ok: true, value: parsed.value };
+    },
   });
+  return value;
 }
 
 function yes(question, defaultYes = true) {
-  if (AUTO) {
-    console.log(`${question}: ${defaultYes ? 'yes' : 'no'} (auto)`);
-    return Promise.resolve(defaultYes);
-  }
-  const hint = defaultYes ? 'Y/n' : 'y/N';
-  return ask(`${question} (${hint})`, defaultYes ? 'y' : 'n').then(
-    (a) => a.toLowerCase() === 'y' || (defaultYes && a === '')
-  );
+  return yesValidated(question, defaultYes, { human: false, example: defaultYes ? 'y' : 'n' });
 }
 
 function yesHuman(question, defaultYes = true) {
-  if (YES) {
-    console.log(`${question}: ${defaultYes ? 'yes' : 'no'} (auto)`);
-    return Promise.resolve(defaultYes);
-  }
-  const hint = defaultYes ? 'Y/n' : 'y/N';
-  return askHuman(`${question} (${hint})`, defaultYes ? 'y' : 'n').then(
-    (a) => a.toLowerCase() === 'y' || (defaultYes && a === '')
-  );
+  return yesValidated(question, defaultYes, { human: true, example: defaultYes ? 'y' : 'n' });
 }
 
-function wranglerArgs(extra = '') {
-  return SANDBOX ? `--config ${CONFIG} ${extra}`.trim() : extra.trim();
+function wranglerConfigArgs() {
+  return SANDBOX ? ['--config', CONFIG] : [];
 }
 
 function run(cmd, opts = {}) {
   console.log(`\n→ ${cmd}\n`);
-  execSync(cmd, { stdio: 'inherit', ...opts });
+  // shell required so `npm` resolves on Windows and macOS/Linux the same way
+  execSync(cmd, { stdio: 'inherit', shell: true, ...opts });
 }
 
-function runCapture(cmd) {
-  return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+function wranglerBin() {
+  const local = join(process.cwd(), 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+  if (existsSync(local)) return local;
+  throw new Error('wrangler is not installed. Run npm install first.');
 }
 
-/** Run a command, stream output to the terminal, and return combined stdout+stderr. */
-function runCaptureInherit(cmd) {
-  console.log(`\n→ ${cmd}\n`);
-  const result = spawnSync(cmd, {
-    shell: true,
+/**
+ * Run local wrangler via node — portable on macOS, Linux, and Windows
+ * (avoids `spawn npx` ENOENT on Windows).
+ */
+function wranglerSync(args, opts = {}) {
+  return spawnSync(process.execPath, [wranglerBin(), ...args], {
     encoding: 'utf8',
+    ...opts,
   });
+}
+
+function wranglerCapture(args) {
+  const result = wranglerSync(args);
+  const out = `${result.stdout || ''}${result.stderr || ''}`.trim();
+  if (result.status !== 0) {
+    const detail = result.error?.message || out || `(exit ${result.status ?? 'unknown'})`;
+    throw new Error(detail);
+  }
+  return out;
+}
+
+/** Stream wrangler output to the terminal and return it for parsing. */
+function wranglerCaptureInherit(args) {
+  console.log(`\n→ wrangler ${args.join(' ')}\n`);
+  const result = wranglerSync(args);
   const out = `${result.stdout || ''}${result.stderr || ''}`;
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   return { status: result.status ?? 1, out };
 }
 
+function wranglerInherit(args) {
+  console.log(`\n→ wrangler ${args.join(' ')}\n`);
+  const result = spawnSync(process.execPath, [wranglerBin(), ...args], {
+    stdio: 'inherit',
+  });
+  if ((result.status ?? 1) !== 0) {
+    throw new Error(`wrangler ${args[0]} failed`);
+  }
+}
+
 function wranglerLoggedIn() {
   try {
-    runCapture('npx wrangler whoami');
+    wranglerCapture(['whoami']);
     return true;
   } catch {
     return false;
@@ -150,14 +203,14 @@ function wranglerLoggedIn() {
 
 function listD1() {
   try {
-    return JSON.parse(runCapture('npx wrangler d1 list --json'));
+    return JSON.parse(wranglerCapture(['d1', 'list', '--json']));
   } catch {
     return [];
   }
 }
 
 function createD1(name) {
-  const out = runCapture(`npx wrangler d1 create ${name}`);
+  const out = wranglerCapture(['d1', 'create', name]);
   const match = out.match(/database_id\s*=\s*"([^"]+)"/);
   if (match) return match[1];
   const list = listD1().find((db) => db.name === name);
@@ -165,17 +218,22 @@ function createD1(name) {
 }
 
 function putSecret(name, value) {
-  const args = ['wrangler', 'secret', 'put', name];
-  if (SANDBOX) args.push('--config', CONFIG);
-  const result = spawnSync('npx', args, {
-    // Trailing newline required; avoid PowerShell pipe quirks by feeding spawnSync directly.
+  const args = ['secret', 'put', name, ...wranglerConfigArgs()];
+  const result = wranglerSync(args, {
+    // Trailing newline required for wrangler secret put stdin.
     input: `${value}\n`,
-    encoding: 'utf8',
   });
   if (result.status !== 0) {
-    console.error(result.stderr || result.stdout);
+    const detail =
+      result.error?.message ||
+      result.stderr ||
+      result.stdout ||
+      `(exit ${result.status ?? 'unknown'})`;
+    console.error(detail);
     throw new Error(`Failed to set secret ${name}`);
   }
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
 }
 
 function patchWrangler({ name, databaseName, databaseId, siteOrigin, schedule, includeCrons }) {
@@ -238,7 +296,8 @@ function isProtectedDatabaseId(id) {
 function buildAndDeploy({ workerName, siteOrigin, includeCrons }) {
   run('npm run build');
 
-  let deploy = runCaptureInherit(`npx wrangler deploy ${wranglerArgs()}`.trim());
+  const deployArgs = ['deploy', ...wranglerConfigArgs()];
+  let deploy = wranglerCaptureInherit(deployArgs);
   let usedCrons = includeCrons;
 
   const cronBlocked =
@@ -252,7 +311,7 @@ function buildAndDeploy({ workerName, siteOrigin, includeCrons }) {
 `);
     clearCronsInConfig();
     usedCrons = false;
-    deploy = runCaptureInherit(`npx wrangler deploy ${wranglerArgs()}`.trim());
+    deploy = wranglerCaptureInherit(deployArgs);
   }
 
   if (deploy.status !== 0) {
@@ -266,7 +325,7 @@ function buildAndDeploy({ workerName, siteOrigin, includeCrons }) {
     console.log(`\n✓ Live URL is ${liveUrl} — updating SITE_ORIGIN and redeploying vars…`);
     updateSiteOrigin(liveUrl);
     finalOrigin = liveUrl;
-    const again = runCaptureInherit(`npx wrangler deploy ${wranglerArgs()}`.trim());
+    const again = wranglerCaptureInherit(deployArgs);
     if (again.status !== 0) {
       console.log('⚠ Redeploy to sync SITE_ORIGIN failed; site still works at the URL above.');
     }
@@ -305,12 +364,53 @@ async function promptSchedule() {
   console.log('Pick when the pub is announced. Meet and ratings times are derived from that');
   console.log('(ratings close the following calendar day). You can tweak the derived times.\n');
 
-  const timezone = await askHuman('IANA timezone', 'Australia/Perth');
-  const announceWeekday = parseWeekdayInput(
-    await askHuman('Announce weekday (Mon–Sun)', 'Friday'),
-    5
-  );
-  const announceLocalTime = parseHhmmInput(await askHuman('Announce time (HH:MM)', '10:00'), '10:00');
+  const timezone = await askValidated({
+    question: 'IANA timezone',
+    example: 'Australia/Perth',
+    defaultValue: 'Australia/Perth',
+    human: true,
+    validate: (raw) => {
+      if (!isValidIanaTimeZone(raw)) {
+        return {
+          ok: false,
+          error: 'Not a valid IANA timezone (use Continent/City).',
+        };
+      }
+      return { ok: true, value: String(raw).trim() };
+    },
+  });
+
+  const announceWeekday = await askValidated({
+    question: 'Announce weekday',
+    example: 'Friday',
+    defaultValue: 'Friday',
+    human: true,
+    validate: (raw) => {
+      const day = parseWeekdayStrict(raw);
+      if (day === null) {
+        return {
+          ok: false,
+          error: 'Use a day name like Monday–Sunday (or 0–6).',
+        };
+      }
+      return { ok: true, value: day };
+    },
+  });
+
+  const announceLocalTime = await askValidated({
+    question: 'Announce time (24-hour HH:MM)',
+    example: '10:00',
+    defaultValue: '10:00',
+    human: true,
+    validate: (raw) => {
+      const t = parseHhmmStrict(raw);
+      if (!t) {
+        return { ok: false, error: 'Use 24-hour HH:MM, e.g. 09:00 or 14:30.' };
+      }
+      return { ok: true, value: t };
+    },
+  });
+
   const related = deriveRelatedTimes(announceLocalTime);
 
   let meetLocalTime = related.meetLocalTime;
@@ -331,19 +431,40 @@ async function promptSchedule() {
   console.log('');
 
   if (await yesHuman('Customize meet / ratings open / ratings close times?', false)) {
-    meetLocalTime = parseHhmmInput(await askHuman('Meet time (HH:MM)', meetLocalTime), meetLocalTime);
+    meetLocalTime = await askValidated({
+      question: 'Meet time (24-hour HH:MM)',
+      example: '12:00',
+      defaultValue: meetLocalTime,
+      human: true,
+      validate: (raw) => {
+        const t = parseHhmmStrict(raw);
+        if (!t) return { ok: false, error: 'Use 24-hour HH:MM, e.g. 12:00.' };
+        return { ok: true, value: t };
+      },
+    });
     const defaultOpen = addMinutesHhmm(meetLocalTime, 20);
-    rateOpenLocalTime = parseHhmmInput(
-      await askHuman('Ratings open time same day (HH:MM)', defaultOpen),
-      defaultOpen
-    );
-    rateCloseLocalTime = parseHhmmInput(
-      await askHuman(
-        `Ratings close time next day (${WEEKDAY_LABELS[(announceWeekday + 1) % 7]}) (HH:MM)`,
-        rateCloseLocalTime
-      ),
-      rateCloseLocalTime
-    );
+    rateOpenLocalTime = await askValidated({
+      question: 'Ratings open time same day (24-hour HH:MM)',
+      example: defaultOpen,
+      defaultValue: defaultOpen,
+      human: true,
+      validate: (raw) => {
+        const t = parseHhmmStrict(raw);
+        if (!t) return { ok: false, error: 'Use 24-hour HH:MM, e.g. 12:20.' };
+        return { ok: true, value: t };
+      },
+    });
+    rateCloseLocalTime = await askValidated({
+      question: `Ratings close time next day (${WEEKDAY_LABELS[(announceWeekday + 1) % 7]}) (24-hour HH:MM)`,
+      example: '23:59',
+      defaultValue: rateCloseLocalTime,
+      human: true,
+      validate: (raw) => {
+        const t = parseHhmmStrict(raw);
+        if (!t) return { ok: false, error: 'Use 24-hour HH:MM, e.g. 23:59.' };
+        return { ok: true, value: t };
+      },
+    });
   }
 
   let holidayShift = 'none';
@@ -368,7 +489,21 @@ async function promptSchedule() {
 async function promptAdminPassword() {
   console.log('\n── Admin password ──');
   console.log('This is what you type on /admin. Leave blank to auto-generate one.');
-  let adminPassword = await askHuman('Choose an admin password', '');
+  let adminPassword = await askValidated({
+    question: 'Choose an admin password',
+    example: 'correct-horse-battery',
+    defaultValue: '',
+    human: true,
+    validate: (raw) => {
+      if (!isValidOptionalPassword(raw)) {
+        return {
+          ok: false,
+          error: 'Password must be 4–128 characters with no leading/trailing spaces (or leave blank).',
+        };
+      }
+      return { ok: true, value: String(raw ?? '').trim() };
+    },
+  });
   if (!adminPassword) {
     adminPassword = randomBytes(9).toString('base64url');
     console.log(`\nGenerated password:\n\n  ${adminPassword}\n`);
@@ -412,7 +547,7 @@ and optional deploy. It does NOT delete existing D1 data.
 
       // --yes on a machine with production config → deploy-only (never wipe/recreate).
       if (await yes('Deploy code only (safe — keeps all pubs & branding in D1)?', true)) {
-        if (!wranglerLoggedIn()) run('npx wrangler login');
+        if (!wranglerLoggedIn()) wranglerInherit(['login']);
         run('npm run deploy');
         console.log('\n✓ Deploy complete. Your D1 data was not modified.\n');
         rl.close();
@@ -432,7 +567,7 @@ and optional deploy. It does NOT delete existing D1 data.
 
   if (!wranglerLoggedIn()) {
     console.log('Log in to Cloudflare (browser window will open)…');
-    run('npx wrangler login');
+    wranglerInherit(['login']);
   } else {
     console.log('✓ Cloudflare login OK');
   }
@@ -450,26 +585,61 @@ and optional deploy. It does NOT delete existing D1 data.
   const defaultWorker = SANDBOX ? 'weekly-picker-sandbox' : 'my-weekly-picker';
   const defaultDb = SANDBOX ? 'weekly-picker-sandbox-db' : 'weekly-picker-db';
 
-  let workerName = await ask('Worker name (workers.dev subdomain)', defaultWorker);
-  if (SANDBOX && RESERVED_WORKER_NAMES.has(workerName)) {
-    console.log(`Refusing worker name "${workerName}" in sandbox — reserved for production.`);
-    workerName = defaultWorker;
-    console.log(`Using ${workerName} instead.`);
-  }
+  let workerName = await askValidated({
+    question: 'Worker name (workers.dev subdomain)',
+    example: defaultWorker,
+    defaultValue: defaultWorker,
+    validate: (raw) => {
+      const name = normalizeResourceName(raw);
+      if (!isValidResourceName(name)) {
+        return {
+          ok: false,
+          error: 'Use lowercase letters, numbers, hyphens; start with a letter (e.g. my-weekly-picker).',
+        };
+      }
+      if (SANDBOX && RESERVED_WORKER_NAMES.has(name)) {
+        return { ok: false, error: `"${name}" is reserved for production — pick another name.` };
+      }
+      return { ok: true, value: name };
+    },
+  });
 
   // Placeholder until deploy prints the real https://name.account.workers.dev URL.
   // Custom domains entered here are kept (never overwritten after deploy).
-  let siteOrigin = await ask('Public site URL', `https://${workerName}.workers.dev`);
-  if (!siteOrigin.startsWith('http')) siteOrigin = `https://${siteOrigin}`;
+  let siteOrigin = await askValidated({
+    question: 'Public site URL',
+    example: `https://${workerName}.workers.dev`,
+    defaultValue: `https://${workerName}.workers.dev`,
+    validate: (raw) => {
+      if (!isValidSiteOrigin(raw)) {
+        return {
+          ok: false,
+          error: 'Enter a full URL like https://my-site.workers.dev or https://picker.example.com',
+        };
+      }
+      return { ok: true, value: normalizeSiteOrigin(raw) };
+    },
+  });
 
   console.log('\n── Database (D1) ──');
-  let dbName = await ask('D1 database name', defaultDb);
-
-  if (SANDBOX && RESERVED_DB_NAMES.has(dbName)) {
-    console.log(`Refusing database name "${dbName}" in sandbox — reserved for production.`);
-    dbName = defaultDb;
-    console.log(`Using ${dbName} instead.`);
-  }
+  let dbName = await askValidated({
+    question: 'D1 database name',
+    example: defaultDb,
+    defaultValue: defaultDb,
+    validate: (raw) => {
+      const name = normalizeResourceName(raw);
+      if (!isValidResourceName(name)) {
+        return {
+          ok: false,
+          error: 'Use lowercase letters, numbers, hyphens; start with a letter (e.g. weekly-picker-db).',
+        };
+      }
+      if (SANDBOX && RESERVED_DB_NAMES.has(name)) {
+        return { ok: false, error: `"${name}" is reserved for production — pick another name.` };
+      }
+      return { ok: true, value: name };
+    },
+  });
 
   const databases = listD1();
   const existing = databases.find((db) => db.name === dbName);
@@ -495,7 +665,21 @@ and optional deploy. It does NOT delete existing D1 data.
       }
       console.log(`✓ Created ${dbName} (${databaseId})`);
     } else {
-      databaseId = await ask('Paste database_id from Cloudflare dashboard');
+      databaseId = await askValidated({
+        question: 'Paste database_id from Cloudflare dashboard',
+        example: 'd60055ce-335a-4afa-b6ad-d4c6da7fde9c',
+        defaultValue: '',
+        validate: (raw) => {
+          const id = String(raw ?? '').trim().toLowerCase();
+          if (!isValidDatabaseId(id)) {
+            return {
+              ok: false,
+              error: 'Must be a UUID like d60055ce-335a-4afa-b6ad-d4c6da7fde9c.',
+            };
+          }
+          return { ok: true, value: id };
+        },
+      });
     }
   }
 
@@ -552,11 +736,14 @@ and optional deploy. It does NOT delete existing D1 data.
   console.log('\n── Database tables ──');
   console.log('Creates empty tables only (no venues).');
   if (await yes('Apply schema.sql to this remote D1?', true)) {
-    run(
-      `npx wrangler d1 execute ${dbName} --remote ${wranglerArgs()} --file=schema.sql`
-        .replace(/\s+/g, ' ')
-        .trim()
-    );
+    wranglerInherit([
+      'd1',
+      'execute',
+      dbName,
+      '--remote',
+      ...wranglerConfigArgs(),
+      '--file=schema.sql',
+    ]);
   }
 
   if (!SANDBOX && !YES) {

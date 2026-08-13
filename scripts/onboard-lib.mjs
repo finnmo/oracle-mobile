@@ -60,3 +60,58 @@ export function shouldSyncSiteOriginToWorkersDev(configuredOrigin, liveUrl, work
   if (configured === live) return false;
   return isIncompleteWorkersDevOrigin(configured, workerName);
 }
+
+/** Cloudflare Worker / D1 name: lowercase letter, then letters/digits/hyphens. */
+export function normalizeResourceName(raw) {
+  return String(raw ?? '').trim().toLowerCase();
+}
+
+export function isValidResourceName(raw) {
+  const v = normalizeResourceName(raw);
+  return /^[a-z][a-z0-9-]{0,62}$/.test(v) && !v.endsWith('-');
+}
+
+export function normalizeSiteOrigin(raw) {
+  let v = String(raw ?? '').trim();
+  if (!v) return '';
+  if (!/^https?:\/\//i.test(v)) v = `https://${v}`;
+  return v.replace(/\/$/, '');
+}
+
+export function isValidSiteOrigin(raw) {
+  const v = normalizeSiteOrigin(raw);
+  if (!v) return false;
+  try {
+    const u = new URL(v);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    if (!u.hostname || !u.hostname.includes('.')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isValidDatabaseId(raw) {
+  const v = String(raw ?? '').trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
+}
+
+/**
+ * Parse y/n answers. Empty → use defaultYes.
+ * Returns { ok:true, value:boolean } or { ok:false }.
+ */
+export function parseYesNo(raw, defaultYes = true) {
+  const v = String(raw ?? '').trim().toLowerCase();
+  if (!v) return { ok: true, value: defaultYes };
+  if (['y', 'yes'].includes(v)) return { ok: true, value: true };
+  if (['n', 'no'].includes(v)) return { ok: true, value: false };
+  return { ok: false };
+}
+
+/** Optional password: empty allowed (auto-generate). Non-empty must be 4–128 chars. */
+export function isValidOptionalPassword(raw) {
+  const v = String(raw ?? '');
+  if (!v.trim()) return true;
+  if (v !== v.trim()) return false;
+  return v.length >= 4 && v.length <= 128;
+}

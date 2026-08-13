@@ -24,17 +24,45 @@ const WEEKDAY_PARSE = {
 };
 
 export function parseWeekdayInput(raw, fallback = 5) {
+  const parsed = parseWeekdayStrict(raw);
+  if (parsed === null) return fallback;
+  return parsed;
+}
+
+/** Returns 0–6, or null if empty/invalid (does not apply a fallback). */
+export function parseWeekdayStrict(raw) {
   const v = String(raw ?? '').trim().toLowerCase();
-  if (!v) return fallback;
+  if (!v) return null;
   if (/^[0-6]$/.test(v)) return Number(v);
-  return WEEKDAY_PARSE[v] ?? fallback;
+  if (Object.prototype.hasOwnProperty.call(WEEKDAY_PARSE, v)) return WEEKDAY_PARSE[v];
+  return null;
 }
 
 export function parseHhmmInput(raw, fallback) {
+  const parsed = parseHhmmStrict(raw);
+  if (parsed === null) return fallback;
+  return parsed;
+}
+
+/** Returns HH:MM, or null if empty/invalid. */
+export function parseHhmmStrict(raw) {
   const v = String(raw ?? '').trim();
+  if (!v) return null;
   const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(v);
-  if (!m) return fallback;
+  if (!m) return null;
   return `${m[1].padStart(2, '0')}:${m[2]}`;
+}
+
+/** True when `tz` is a valid IANA time zone for Intl. */
+export function isValidIanaTimeZone(tz) {
+  const v = String(tz ?? '').trim();
+  if (!v) return false;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: v });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function addMinutesHhmm(hhmm, minutes) {

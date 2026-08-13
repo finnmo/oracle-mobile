@@ -3,11 +3,20 @@ import {
   buildCronBundle,
   deriveRelatedTimes,
   formatScheduleSummary,
+  isValidIanaTimeZone,
+  parseHhmmStrict,
+  parseWeekdayStrict,
 } from './schedule-lib.mjs';
 import {
   extractWorkersDevUrl,
   isCronLimitError,
   isIncompleteWorkersDevOrigin,
+  isValidDatabaseId,
+  isValidOptionalPassword,
+  isValidResourceName,
+  isValidSiteOrigin,
+  normalizeSiteOrigin,
+  parseYesNo,
   setCronBlock,
   setTomlVar,
   shouldSyncSiteOriginToWorkersDev,
@@ -82,6 +91,63 @@ describe('formatScheduleSummary', () => {
   });
 });
 
+describe('strict schedule parsers', () => {
+  it('rejects invalid weekdays instead of falling back', () => {
+    expect(parseWeekdayStrict('Friday')).toBe(5);
+    expect(parseWeekdayStrict('funday')).toBeNull();
+    expect(parseWeekdayStrict('')).toBeNull();
+  });
+
+  it('rejects invalid times', () => {
+    expect(parseHhmmStrict('9:00')).toBe('09:00');
+    expect(parseHhmmStrict('24:00')).toBeNull();
+    expect(parseHhmmStrict('10am')).toBeNull();
+    expect(parseHhmmStrict('')).toBeNull();
+  });
+
+  it('validates IANA timezones', () => {
+    expect(isValidIanaTimeZone('Australia/Perth')).toBe(true);
+    expect(isValidIanaTimeZone('Not/AZone')).toBe(false);
+    expect(isValidIanaTimeZone('')).toBe(false);
+  });
+});
+
+describe('input validators', () => {
+  it('validates worker/db names', () => {
+    expect(isValidResourceName('my-weekly-picker')).toBe(true);
+    expect(isValidResourceName('oracle')).toBe(true);
+    expect(isValidResourceName('-bad')).toBe(false);
+    expect(isValidResourceName('bad-')).toBe(false);
+    expect(isValidResourceName('has space')).toBe(false);
+  });
+
+  it('validates site origins', () => {
+    expect(isValidSiteOrigin('https://my-weekly-picker.workers.dev')).toBe(true);
+    expect(isValidSiteOrigin('picker.example.com')).toBe(true);
+    expect(normalizeSiteOrigin('picker.example.com')).toBe('https://picker.example.com');
+    expect(isValidSiteOrigin('not a url')).toBe(false);
+  });
+
+  it('validates database UUIDs', () => {
+    expect(isValidDatabaseId('d60055ce-335a-4afa-b6ad-d4c6da7fde9c')).toBe(true);
+    expect(isValidDatabaseId('nope')).toBe(false);
+  });
+
+  it('parses yes/no strictly', () => {
+    expect(parseYesNo('', true)).toEqual({ ok: true, value: true });
+    expect(parseYesNo('yes', false)).toEqual({ ok: true, value: true });
+    expect(parseYesNo('n', true)).toEqual({ ok: true, value: false });
+    expect(parseYesNo('maybe', true).ok).toBe(false);
+  });
+
+  it('validates optional passwords', () => {
+    expect(isValidOptionalPassword('')).toBe(true);
+    expect(isValidOptionalPassword('abcd')).toBe(true);
+    expect(isValidOptionalPassword('ab')).toBe(false);
+    expect(isValidOptionalPassword('  spaced  ')).toBe(false);
+  });
+});
+
 describe('isIncompleteWorkersDevOrigin', () => {
   it('flags missing account subdomain', () => {
     expect(isIncompleteWorkersDevOrigin('https://my-weekly-picker.workers.dev', 'my-weekly-picker')).toBe(
@@ -152,7 +218,11 @@ describe('isCronLimitError', () => {
 
 describe('toml helpers', () => {
   it('updates SITE_ORIGIN in place', () => {
-    const next = setTomlVar('name = "x"\n\n[vars]\nSITE_ORIGIN = "https://old.example"\n', 'SITE_ORIGIN', 'https://new.example');
+    const next = setTomlVar(
+      'name = "x"\n\n[vars]\nSITE_ORIGIN = "https://old.example"\n',
+      'SITE_ORIGIN',
+      'https://new.example'
+    );
     expect(next).toContain('SITE_ORIGIN = "https://new.example"');
     expect(next).not.toContain('https://old.example');
   });
