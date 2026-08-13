@@ -44,6 +44,8 @@ Required repository secrets:
 | `CLOUDFLARE_ACCOUNT_ID` | Account |
 | `WRANGLER_TOML` | Full production `wrangler.toml` contents (not stored in git) |
 
+Do **not** use Cloudflare’s “Configure for Vite” / auto `wrangler.jsonc` wizard on this repo. It installs a stub SPA config (no D1, no crons, no Worker) and can hit `workers-types` peer conflicts. Keep `wrangler.toml` / `wrangler.toml.example` and deploy with `npm run deploy` or the Actions workflow.
+
 ---
 
 ## What a brand-new deployment needs

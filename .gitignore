@@ -7,6 +7,9 @@ dist/
 *.local
 wrangler.toml
 wrangler.sandbox.toml
+# Cloudflare Vite auto-setup stub — must not replace our Worker/D1/cron config
+wrangler.json
+wrangler.jsonc
 .protect-databases
 test.py
 .venv/
