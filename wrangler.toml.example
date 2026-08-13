@@ -29,6 +29,10 @@ SCHEDULE_RATE_OPEN_TIME = "12:20"
 SCHEDULE_RATE_CLOSE_TIME = "23:59"
 # "wa" = shift one day earlier when announce weekday is a WA public holiday; "none" = off
 SCHEDULE_HOLIDAY_SHIFT = "none"
+# Exact triggers (filled by onboard). Worker matches Cloudflare event.cron to these first.
+SCHEDULE_CRON_ANNOUNCE = "0 2 * * FRI"
+SCHEDULE_CRON_OPEN = "20 4 * * FRI"
+SCHEDULE_CRON_CLOSE = "59 15 * * SAT"
 
 [triggers]
 # Generated for the schedule above (UTC). Re-run npm run onboard or edit + convert if you change local times.

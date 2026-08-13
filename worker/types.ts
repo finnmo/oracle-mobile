@@ -23,6 +23,10 @@ export interface Env {
   SCHEDULE_RATE_OPEN_TIME?: string;
   SCHEDULE_RATE_CLOSE_TIME?: string;
   SCHEDULE_HOLIDAY_SHIFT?: string;
+  /** Exact cron expressions from onboard (preferred for ScheduledEvent matching). */
+  SCHEDULE_CRON_ANNOUNCE?: string;
+  SCHEDULE_CRON_OPEN?: string;
+  SCHEDULE_CRON_CLOSE?: string;
 }
 
 export interface Pub {

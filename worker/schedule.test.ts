@@ -49,6 +49,60 @@ describe('buildCronBundle', () => {
   });
 });
 
+describe('classifyCronTrigger', () => {
+  it('classifies Perth WA-shift triggers via regenerated bundle', async () => {
+    const { classifyCronTrigger } = await import('./schedule');
+    const schedule = DEFAULT_SCHEDULE;
+    expect(classifyCronTrigger('0 2 * * THU,FRI', schedule)).toBe('announce');
+    expect(classifyCronTrigger('20 4 * * THU,FRI', schedule)).toBe('open');
+    expect(classifyCronTrigger('59 15 * * FRI,SAT', schedule)).toBe('close');
+  });
+
+  it('prefers explicit SCHEDULE_CRON_* strings', async () => {
+    const { classifyCronTrigger } = await import('./schedule');
+    const schedule = { ...DEFAULT_SCHEDULE, holidayShift: 'none' as const };
+    expect(
+      classifyCronTrigger('0 2 * * FRI', schedule, {
+        scheduledCrons: {
+          announce: '0 2 * * FRI',
+          openRatings: '20 4 * * FRI',
+          closeRatings: '59 15 * * SAT',
+        },
+      })
+    ).toBe('announce');
+    expect(
+      classifyCronTrigger('20 4 * * FRI', schedule, {
+        scheduledCrons: {
+          announce: '0 2 * * FRI',
+          openRatings: '20 4 * * FRI',
+          closeRatings: '59 15 * * SAT',
+        },
+      })
+    ).toBe('open');
+  });
+
+  it('still matches London triggers across DST sample seasons', async () => {
+    const { classifyCronTrigger, buildCronBundle } = await import('./schedule');
+    const schedule = {
+      ...DEFAULT_SCHEDULE,
+      timezone: 'Europe/London',
+      announceWeekday: 1,
+      announceLocalTime: '18:00',
+      meetLocalTime: '19:00',
+      rateOpenLocalTime: '19:20',
+      rateCloseLocalTime: '23:59',
+      holidayShift: 'none' as const,
+    };
+    const winter = buildCronBundle(schedule, new Date('2026-01-15T12:00:00Z'));
+    const summer = buildCronBundle(schedule, new Date('2026-07-15T12:00:00Z'));
+    // Winter and summer UTC hours often differ under BST
+    expect(classifyCronTrigger(winter.announce, schedule)).toBe('announce');
+    expect(classifyCronTrigger(summer.announce, schedule)).toBe('announce');
+    expect(classifyCronTrigger(winter.openRatings, schedule)).toBe('open');
+    expect(classifyCronTrigger(summer.openRatings, schedule)).toBe('open');
+  });
+});
+
 describe('zonedLocalToUtc + timings', () => {
   it('converts Perth 10:00 to 02:00 UTC', () => {
     const utc = zonedLocalToUtc('2026-03-27', '10:00', 'Australia/Perth');

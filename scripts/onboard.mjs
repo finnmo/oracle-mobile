@@ -286,6 +286,13 @@ function patchWrangler({ name, databaseName, databaseId, siteOrigin, schedule, i
   const cronLines = includeCrons
     ? [crons.announce, crons.openRatings, crons.closeRatings]
     : [];
+  // Persist exact trigger strings so the Worker matches Cloudflare's event.cron
+  // even across DST seasons (regenerating UTC hours at runtime can drift).
+  if (includeCrons) {
+    content = setTomlVar(content, 'SCHEDULE_CRON_ANNOUNCE', crons.announce);
+    content = setTomlVar(content, 'SCHEDULE_CRON_OPEN', crons.openRatings);
+    content = setTomlVar(content, 'SCHEDULE_CRON_CLOSE', crons.closeRatings);
+  }
   content = setCronBlock(content, cronLines);
 
   writeFileSync(CONFIG, content);

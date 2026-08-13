@@ -92,6 +92,10 @@ export interface ScheduleEnv {
   SCHEDULE_RATE_OPEN_TIME?: string;
   SCHEDULE_RATE_CLOSE_TIME?: string;
   SCHEDULE_HOLIDAY_SHIFT?: string;
+  /** Exact cron expressions written by onboard (preferred for trigger matching). */
+  SCHEDULE_CRON_ANNOUNCE?: string;
+  SCHEDULE_CRON_OPEN?: string;
+  SCHEDULE_CRON_CLOSE?: string;
 }
 
 export function getSchedule(env: ScheduleEnv = {}): ScheduleConfig {
@@ -242,6 +246,14 @@ export interface CronBundle {
   closeRatings: string;
 }
 
+/** Fixed sample dates so DST zones still match winter + summer UTC hours. */
+const CRON_SAMPLE_DATES = [
+  new Date('2026-01-15T12:00:00.000Z'),
+  new Date('2026-04-01T00:00:00.000Z'),
+  new Date('2026-07-15T12:00:00.000Z'),
+  new Date('2026-10-15T12:00:00.000Z'),
+];
+
 /** Build Cloudflare cron expressions (UTC) for the schedule. */
 export function buildCronBundle(schedule: ScheduleConfig, from: Date = new Date()): CronBundle {
   const announceDays =
@@ -264,6 +276,66 @@ export function buildCronBundle(schedule: ScheduleConfig, from: Date = new Date(
     openRatings: `${openUtc.minute} ${openUtc.hour} * * ${cronWeekdayList(announceDays)}`,
     closeRatings: `${closeUtc.minute} ${closeUtc.hour} * * ${cronWeekdayList(closeDays)}`,
   };
+}
+
+/**
+ * All cron expression variants we may have registered (DST seasons + holiday shift).
+ * Used so runtime matching still works if the Worker clock is in a different season
+ * than when onboard generated the triggers.
+ */
+export function cronBundleVariants(schedule: ScheduleConfig, extraFrom?: Date): CronBundle[] {
+  const dates = [...CRON_SAMPLE_DATES];
+  if (extraFrom) dates.push(extraFrom);
+  const seen = new Set<string>();
+  const out: CronBundle[] = [];
+  for (const from of dates) {
+    const bundle = buildCronBundle(schedule, from);
+    const key = `${bundle.announce}|${bundle.openRatings}|${bundle.closeRatings}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(bundle);
+  }
+  return out;
+}
+
+export type CronRole = 'announce' | 'open' | 'close' | 'unknown';
+
+/**
+ * Map Cloudflare's event.cron (exact registered expression) to a role.
+ * Prefers explicit SCHEDULE_CRON_* vars (written by onboard), then regenerated bundles,
+ * then legacy Perth constants.
+ */
+export function classifyCronTrigger(
+  eventCron: string,
+  schedule: ScheduleConfig,
+  opts: {
+    now?: Date;
+    scheduledCrons?: Partial<CronBundle>;
+    legacy?: CronBundle;
+  } = {}
+): CronRole {
+  const cron = eventCron.trim();
+  if (!cron) return 'unknown';
+
+  const scheduled = opts.scheduledCrons;
+  if (scheduled?.announce && cron === scheduled.announce) return 'announce';
+  if (scheduled?.openRatings && cron === scheduled.openRatings) return 'open';
+  if (scheduled?.closeRatings && cron === scheduled.closeRatings) return 'close';
+
+  for (const bundle of cronBundleVariants(schedule, opts.now)) {
+    if (cron === bundle.announce) return 'announce';
+    if (cron === bundle.openRatings) return 'open';
+    if (cron === bundle.closeRatings) return 'close';
+  }
+
+  const legacy = opts.legacy;
+  if (legacy) {
+    if (cron === legacy.announce) return 'announce';
+    if (cron === legacy.openRatings) return 'open';
+    if (cron === legacy.closeRatings) return 'close';
+  }
+
+  return 'unknown';
 }
 
 export function schedulePublicView(schedule: ScheduleConfig) {

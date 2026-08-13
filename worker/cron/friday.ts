@@ -3,44 +3,46 @@ import {
   computeRoundTimingsFromAnchorYmd,
   tryResolveCronAnnounceAnchorYmd,
 } from '../timeUtils';
-import { buildCronBundle, getSchedule } from '../schedule';
+import { buildCronBundle, classifyCronTrigger, getSchedule } from '../schedule';
 import { pickPubForWeek } from '../utils/pubPicker';
 
-/** Cron strings for DEFAULT_SCHEDULE (Perth Friday) — used by unit tests. */
+/** Cron strings for DEFAULT_SCHEDULE (Perth Friday + WA holiday shift) — legacy fallback. */
 export const CRON_ANNOUNCE = '0 2 * * THU,FRI';
 export const CRON_OPEN_RATINGS = '20 4 * * THU,FRI';
 export const CRON_CLOSE_RATINGS = '59 15 * * FRI,SAT';
 
+const LEGACY_CRONS = {
+  announce: CRON_ANNOUNCE,
+  openRatings: CRON_OPEN_RATINGS,
+  closeRatings: CRON_CLOSE_RATINGS,
+};
+
 export async function handleCron(event: ScheduledEvent, env: Env): Promise<void> {
   const now = new Date(event.scheduledTime);
   const schedule = getSchedule(env);
-  const crons = buildCronBundle(schedule, now);
 
   // Run on every cron so a missed close firing is caught by the next announce/open cron.
   await closeRatings(now, env);
 
-  if (event.cron === crons.announce) {
-    await announcePub(now, env);
-    return;
-  }
-  if (event.cron === crons.openRatings) {
-    await openRatings(now, env);
-    return;
-  }
-  if (event.cron === crons.closeRatings) {
-    return;
-  }
+  const role = classifyCronTrigger(event.cron, schedule, {
+    now,
+    scheduledCrons: {
+      announce: env.SCHEDULE_CRON_ANNOUNCE,
+      openRatings: env.SCHEDULE_CRON_OPEN,
+      closeRatings: env.SCHEDULE_CRON_CLOSE,
+    },
+    legacy: LEGACY_CRONS,
+  });
 
-  // Fallback: match legacy Perth constants (existing Workers mid-migrate)
-  switch (event.cron) {
-    case CRON_ANNOUNCE:
+  switch (role) {
+    case 'announce':
       await announcePub(now, env);
-      break;
-    case CRON_OPEN_RATINGS:
+      return;
+    case 'open':
       await openRatings(now, env);
-      break;
-    case CRON_CLOSE_RATINGS:
-      break;
+      return;
+    case 'close':
+      return;
     default:
       console.warn(`Unhandled cron expression: ${event.cron}`);
   }
@@ -129,4 +131,9 @@ async function closeRatings(now: Date, env: Env): Promise<void> {
     .run();
 
   console.log(`[cron] Ratings closed (rows changed: ${result.meta.changes})`);
+}
+
+/** Exported for tests — regenerate expected Perth Friday triggers. */
+export function expectedDefaultCrons(from = new Date('2026-04-01T00:00:00Z')) {
+  return buildCronBundle(getSchedule({}), from);
 }
