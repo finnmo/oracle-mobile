@@ -27,8 +27,18 @@ The wizard: Cloudflare login → create Worker + D1 → admin password → empty
 No Cloudflare Access / Google SSO setup required.
 
 On **Windows**, use **PowerShell** or **Command Prompt**. If login fails with a
-“non-interactive / CLOUDFLARE_API_TOKEN” message, run `npx wrangler login` once
-in that same terminal, then re-run the wizard.
+“non-interactive / CLOUDFLARE_API_TOKEN” message, **log in first** in that same
+terminal, then re-run the wizard:
+
+```powershell
+Remove-Item Env:CI -ErrorAction SilentlyContinue
+npx wrangler login
+npx wrangler whoami
+npm run onboard:sandbox
+```
+
+On Windows, do not expect the wizard itself to open the Cloudflare login browser —
+run `npx wrangler login` manually first (or set `CLOUDFLARE_API_TOKEN`).
 
 ### Trial / sandbox (non-technical — one command)
 
@@ -36,15 +46,18 @@ Safe path that **never** edits `wrangler.toml` or production Worker/D1 names:
 
 ```bash
 npm install
+npx wrangler login   # once per machine / if whoami fails
 npm run onboard:sandbox
 ```
 
-What it asks you (only the important bits):
+What it asks you:
 
-1. **Timezone**, **announce weekday**, **announce time** — meet + ratings times are derived (ratings close the next day)
-2. **Admin password** — type one, or press Enter to auto-generate
+1. **Worker name**, **site URL**, **D1 database name** (defaults are fine for a trial)
+2. **Timezone**, **announce weekday**, **announce time** — meet + ratings times are derived
+3. **Admin password** — type one, or press Enter to auto-generate
+4. Confirm schema upload + deploy
 
-Everything else (Worker/D1 names, schema, deploy, SITE_ORIGIN fix) is automatic. Then open the printed Site/Admin URLs.
+Then open the printed Site/Admin URLs.
 
 | Goal | Command |
 |------|---------|

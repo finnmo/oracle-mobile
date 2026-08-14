@@ -4,7 +4,7 @@
  *
  *   npm run onboard              # normal (protects Oracle production config)
  *   npm run onboard -- --yes     # fully non-interactive new site (wrangler.toml)
- *   npm run onboard:sandbox      # separate Worker + D1; asks schedule + password only
+ *   npm run onboard:sandbox      # separate Worker + D1; never touches wrangler.toml
  *   npm run onboard:sandbox -- --yes
  *
  * Schedule: user picks announce weekday + time; meet/ratings are derived
@@ -17,6 +17,7 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { randomBytes } from 'node:crypto';
@@ -46,10 +47,10 @@ import {
 } from './onboard-lib.mjs';
 
 const SANDBOX = process.argv.includes('--sandbox');
-/** Fully non-interactive (CI / agents). Sandbox still asks schedule + password unless --yes. */
+/** Fully non-interactive (CI / agents). Only --yes skips prompts. */
 const YES = process.argv.includes('--yes');
-/** Auto-accept infra defaults (names, D1, deploy). Sandbox always does this. */
-const AUTO = SANDBOX || YES;
+/** Auto-accept defaults when --yes is passed. Sandbox stays interactive. */
+const AUTO = YES;
 const CONFIG = SANDBOX ? 'wrangler.sandbox.toml' : 'wrangler.toml';
 const PASSWORD_FILE = SANDBOX ? '.sandbox-admin-password.txt' : '.admin-password.txt';
 
@@ -155,19 +156,23 @@ function wranglerBin() {
  * Run local wrangler via node — portable on macOS, Linux, and Windows
  * (avoids `spawn npx` ENOENT on Windows).
  */
-function wranglerEnvForInteractive() {
-  // Some Windows shells / corporate images set CI=1, which forces Wrangler into
-  // non-interactive mode (API token required). Clear it for login/whoami.
+function wranglerEnv() {
+  // Corporate images / some IDE terminals set CI=1, which forces Wrangler into
+  // non-interactive mode (API token required) and skips browser login.
   const env = { ...process.env };
   delete env.CI;
   delete env.CONTINUOUS_INTEGRATION;
+  // npm sometimes marks script children as non-interactive on Windows.
+  delete env.npm_config_yes;
   return env;
 }
 
 function wranglerSync(args, opts = {}) {
+  const { env: extraEnv, ...rest } = opts;
   return spawnSync(process.execPath, [wranglerBin(), ...args], {
     encoding: 'utf8',
-    ...opts,
+    ...rest,
+    env: { ...wranglerEnv(), ...(extraEnv || {}) },
   });
 }
 
@@ -195,55 +200,126 @@ function wranglerInherit(args) {
   console.log(`\n→ wrangler ${args.join(' ')}\n`);
   const result = spawnSync(process.execPath, [wranglerBin(), ...args], {
     stdio: 'inherit',
-    env: wranglerEnvForInteractive(),
+    env: wranglerEnv(),
   });
   if ((result.status ?? 1) !== 0) {
     throw new Error(`wrangler ${args[0]} failed`);
   }
 }
 
-/**
- * Must inherit the real console. Piped stdin makes Wrangler think it is in CI
- * ("set CLOUDFLARE_API_TOKEN") even when the parent wizard is interactive.
- */
+function wranglerOAuthConfigPath() {
+  if (process.env.WRANGLER_CONFIG_PATH) return process.env.WRANGLER_CONFIG_PATH;
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Preferences', '.wrangler', 'config', 'default.toml');
+  }
+  // Windows + Linux use XDG-style paths (Windows: %APPDATA%\xdg.config\…)
+  const xdg =
+    process.env.XDG_CONFIG_HOME ||
+    (process.platform === 'win32'
+      ? join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'xdg.config')
+      : join(homedir(), '.config'));
+  return join(xdg, '.wrangler', 'config', 'default.toml');
+}
+
+function hasCloudflareApiToken() {
+  return Boolean(process.env.CLOUDFLARE_API_TOKEN?.trim());
+}
+
+function hasWranglerOAuthFile() {
+  const path = wranglerOAuthConfigPath();
+  if (!existsSync(path)) return false;
+  try {
+    return /oauth_token\s*=/.test(readFileSync(path, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
+/** Quiet check — do not inherit stdio (avoids Windows libuv crash noise). */
 function wranglerLoggedIn() {
-  const result = spawnSync(process.execPath, [wranglerBin(), 'whoami'], {
-    stdio: 'inherit',
-    env: wranglerEnvForInteractive(),
+  if (hasCloudflareApiToken()) return true;
+  const result = wranglerSync(['whoami'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   return (result.status ?? 1) === 0;
 }
 
+function printWindowsLoginHelp() {
+  console.error(`
+Cloudflare login must be done in this terminal BEFORE the wizard.
+
+On Windows, spawning "wrangler login" from npm often fails (no browser,
+UV_HANDLE_CLOSING, or "set CLOUDFLARE_API_TOKEN"). Use PowerShell or cmd:
+
+  Remove-Item Env:CI -ErrorAction SilentlyContinue
+  npx wrangler login
+  npx wrangler whoami
+
+Then re-run:
+
+  npm run onboard:sandbox
+
+Or set a token instead of browser login:
+  https://developers.cloudflare.com/fundamentals/api/get-started/create-token/
+  $env:CLOUDFLARE_API_TOKEN="your-token-here"
+`);
+}
+
 function ensureCloudflareLogin() {
+  if (process.env.CI || process.env.CONTINUOUS_INTEGRATION) {
+    console.log('Note: CI was set in the environment; clearing it for Wrangler calls.');
+  }
+
   if (wranglerLoggedIn()) {
-    console.log('✓ Cloudflare login OK');
+    console.log(
+      hasCloudflareApiToken()
+        ? '✓ Using CLOUDFLARE_API_TOKEN'
+        : '✓ Cloudflare login OK'
+    );
     return;
+  }
+
+  // Windows: do not spawn wrangler login from the wizard — browser OAuth +
+  // libuv often crashes before the page opens, and the wizard never reaches prompts.
+  if (process.platform === 'win32') {
+    if (!hasWranglerOAuthFile() && !hasCloudflareApiToken()) {
+      console.error('No Wrangler OAuth login found yet (and no CLOUDFLARE_API_TOKEN).');
+    }
+    printWindowsLoginHelp();
+    process.exit(1);
+  }
+
+  if (!process.stdin.isTTY) {
+    console.error(`
+Not logged in to Cloudflare, and this terminal has no interactive TTY.
+Run in a real terminal:
+
+  npx wrangler login
+  npx wrangler whoami
+
+Or set CLOUDFLARE_API_TOKEN.
+`);
+    process.exit(1);
   }
 
   console.log(`
 Log in to Cloudflare (browser window will open)…
-Tip: if this fails on Windows, run this once in the same terminal, then re-run the wizard:
-
-  npx wrangler login
 `);
   try {
     wranglerInherit(['login']);
-  } catch (err) {
+  } catch {
     console.error(`
-Cloudflare login did not finish.
-
-Your terminal is interactive, but Wrangler still needs a browser OAuth login
-(or a CLOUDFLARE_API_TOKEN). On Windows prefer PowerShell or Command Prompt.
+Cloudflare login did not finish. Run manually, then re-run the wizard:
 
   npx wrangler login
   npx wrangler whoami
-  npm run onboard
 `);
-    throw err;
+    process.exit(1);
   }
 
   if (!wranglerLoggedIn()) {
-    throw new Error('Still not logged in after wrangler login. Run: npx wrangler login');
+    console.error('Still not logged in after wrangler login. Run: npx wrangler login');
+    process.exit(1);
   }
   console.log('✓ Cloudflare login OK');
 }
@@ -603,9 +679,24 @@ async function main() {
 ╚══════════════════════════════════════════════════╝
 `);
 
+  if (!YES && !process.stdin.isTTY) {
+    console.error(`
+This wizard needs an interactive terminal (prompts + Cloudflare login).
+Open PowerShell or Command Prompt in the project folder, then run:
+
+  npx wrangler login
+  npm run onboard${SANDBOX ? ':sandbox' : ''}
+
+Or for a fully non-interactive run (after login / with CLOUDFLARE_API_TOKEN):
+
+  npm run onboard${SANDBOX ? ':sandbox' : ''} -- --yes
+`);
+    process.exit(1);
+  }
+
   if (SANDBOX) {
     console.log(`Sandbox mode: writes ${CONFIG} only (never touches wrangler.toml).
-Infra steps are automatic. You will still choose announce day/time and an admin password.
+You will choose Worker/D1 names, schedule, admin password, and deploy.
 `);
   } else if (YES) {
     console.log(`Auto mode (--yes): accepting all defaults for a brand-new site.
