@@ -155,23 +155,53 @@ function wranglerBin() {
 /**
  * Run local wrangler via node — portable on macOS, Linux, and Windows
  * (avoids `spawn npx` ENOENT on Windows).
+ *
+ * Critical on Windows: piped stdin makes Wrangler treat the process as CI and
+ * demand CLOUDFLARE_API_TOKEN even when `wrangler login` OAuth exists. Keep
+ * stdin as a real TTY whenever we are not feeding `input`.
  */
 function wranglerEnv() {
-  // Corporate images / some IDE terminals set CI=1, which forces Wrangler into
-  // non-interactive mode (API token required) and skips browser login.
   const env = { ...process.env };
-  delete env.CI;
-  delete env.CONTINUOUS_INTEGRATION;
-  // npm sometimes marks script children as non-interactive on Windows.
+  // ci-info / Wrangler treat any of these as "non-interactive".
+  for (const key of [
+    'CI',
+    'CONTINUOUS_INTEGRATION',
+    'BUILD_ID',
+    'BUILD_NUMBER',
+    'BUILD_URL',
+    'BUILDKITE',
+    'CIRCLECI',
+    'GITHUB_ACTIONS',
+    'GITLAB_CI',
+    'HEROKU_TEST_RUN_ID',
+    'JENKINS_URL',
+    'TEAMCITY_VERSION',
+    'TF_BUILD',
+    'TRAVIS',
+    'APPVEYOR',
+    'CODEBUILD_BUILD_ID',
+  ]) {
+    delete env[key];
+  }
   delete env.npm_config_yes;
   return env;
 }
 
+/** Default stdio: TTY stdin (OAuth works) + capture stdout/stderr. */
+function wranglerStdio(opts = {}) {
+  if (opts.stdio) return opts.stdio;
+  // Feeding stdin (e.g. secret put) requires a pipe — caller should refresh auth first.
+  if (opts.input !== undefined) return ['pipe', 'pipe', 'pipe'];
+  if (process.stdin.isTTY) return ['inherit', 'pipe', 'pipe'];
+  return ['ignore', 'pipe', 'pipe'];
+}
+
 function wranglerSync(args, opts = {}) {
-  const { env: extraEnv, ...rest } = opts;
+  const { env: extraEnv, stdio: _stdio, ...rest } = opts;
   return spawnSync(process.execPath, [wranglerBin(), ...args], {
     encoding: 'utf8',
     ...rest,
+    stdio: wranglerStdio(opts),
     env: { ...wranglerEnv(), ...(extraEnv || {}) },
   });
 }
@@ -189,6 +219,7 @@ function wranglerCapture(args) {
 /** Stream wrangler output to the terminal and return it for parsing. */
 function wranglerCaptureInherit(args) {
   console.log(`\n→ wrangler ${args.join(' ')}\n`);
+  // stdin inherit keeps OAuth working; still capture out for URL / cron-limit parsing.
   const result = wranglerSync(args);
   const out = `${result.stdout || ''}${result.stderr || ''}`;
   if (result.stdout) process.stdout.write(result.stdout);
@@ -235,12 +266,10 @@ function hasWranglerOAuthFile() {
   }
 }
 
-/** Quiet check — do not inherit stdio (avoids Windows libuv crash noise). */
+/** Quiet check — prefer TTY stdin so OAuth refresh is allowed. */
 function wranglerLoggedIn() {
   if (hasCloudflareApiToken()) return true;
-  const result = wranglerSync(['whoami'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const result = wranglerSync(['whoami']);
   return (result.status ?? 1) === 0;
 }
 
@@ -343,26 +372,52 @@ function parseJsonPayload(text) {
 }
 
 function listD1() {
+  const result = wranglerSync(['d1', 'list', '--json']);
+  const errText = `${result.stderr || ''}${result.stdout || ''}`;
+  if ((result.status ?? 1) !== 0) {
+    if (/CLOUDFLARE_API_TOKEN|non-interactive|not logged in|Did not login/i.test(errText)) {
+      throw new Error(
+        `Wrangler is not authenticated for API calls.\n${errText.trim()}\n\nFix: npx wrangler login   OR   set CLOUDFLARE_API_TOKEN`
+      );
+    }
+    // Soft-fail for transient list issues — create path can still work.
+    console.warn(`Warning: d1 list failed (exit ${result.status}). Continuing…`);
+    if (errText.trim()) console.warn(errText.trim());
+    return [];
+  }
+  // JSON is on stdout; warnings land on stderr — never merge before parse.
+  const payload = (result.stdout || '').trim();
+  if (!payload) return [];
   try {
-    const result = wranglerSync(['d1', 'list', '--json']);
-    // JSON is on stdout; warnings land on stderr — never merge before parse.
-    const payload = (result.stdout || '').trim();
-    if (!payload) return [];
-    if ((result.status ?? 1) !== 0) return [];
     return parseJsonPayload(payload);
-  } catch {
+  } catch (err) {
+    console.warn(`Warning: could not parse d1 list JSON (${err.message}). Continuing…`);
     return [];
   }
 }
 
 function createD1(name) {
+  console.log(`\n→ wrangler d1 create ${name}\n`);
   const result = wranglerSync(['d1', 'create', name]);
   const out = `${result.stdout || ''}${result.stderr || ''}`;
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+
   const match = out.match(/database_id\s*=\s*"([^"]+)"/);
   if (match) return match[1];
 
   // Already exists (or create output lacked the id) — resolve via list.
   if ((result.status ?? 1) !== 0 && !/already exists/i.test(out)) {
+    if (/CLOUDFLARE_API_TOKEN|non-interactive/i.test(out)) {
+      throw new Error(
+        `D1 create failed because Wrangler thinks this terminal is non-interactive.\n` +
+          `Run in PowerShell:\n` +
+          `  Remove-Item Env:CI -ErrorAction SilentlyContinue\n` +
+          `  npx wrangler login\n` +
+          `  npx wrangler d1 create ${name}\n` +
+          `Or set CLOUDFLARE_API_TOKEN, then re-run the wizard.\n\n${out.trim()}`
+      );
+    }
     throw new Error(out.trim() || `Failed to create D1 database ${name}`);
   }
   const listed = listD1().find((db) => db.name === name);
@@ -370,6 +425,13 @@ function createD1(name) {
 }
 
 function putSecret(name, value) {
+  // Refresh OAuth while stdin is still a TTY, then pipe the secret value.
+  if (!hasCloudflareApiToken()) {
+    const who = wranglerSync(['whoami']);
+    if ((who.status ?? 1) !== 0) {
+      throw new Error('Not logged in to Cloudflare — run: npx wrangler login');
+    }
+  }
   const args = ['secret', 'put', name, ...wranglerConfigArgs()];
   const result = wranglerSync(args, {
     // Trailing newline required for wrangler secret put stdin.
