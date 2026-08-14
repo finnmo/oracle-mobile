@@ -21,5 +21,10 @@ instances/*/
 .claude/
 .impeccable/
 .cursor/
+.github/skills/
+.github/agents/
+.github/hooks/
+DESIGN.md
+PRODUCT.md
 .DS_Store
 **/.DS_Store
