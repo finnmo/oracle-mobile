@@ -26,6 +26,10 @@ Same commands in **PowerShell**, **Command Prompt**, or **Terminal**.
 The wizard: Cloudflare login → create Worker + D1 → admin password → empty tables → deploy.  
 No Cloudflare Access / Google SSO setup required.
 
+On **Windows**, use **PowerShell** or **Command Prompt**. If login fails with a
+“non-interactive / CLOUDFLARE_API_TOKEN” message, run `npx wrangler login` once
+in that same terminal, then re-run the wizard.
+
 ### Trial / sandbox (non-technical — one command)
 
 Safe path that **never** edits `wrangler.toml` or production Worker/D1 names:

@@ -155,6 +155,15 @@ function wranglerBin() {
  * Run local wrangler via node — portable on macOS, Linux, and Windows
  * (avoids `spawn npx` ENOENT on Windows).
  */
+function wranglerEnvForInteractive() {
+  // Some Windows shells / corporate images set CI=1, which forces Wrangler into
+  // non-interactive mode (API token required). Clear it for login/whoami.
+  const env = { ...process.env };
+  delete env.CI;
+  delete env.CONTINUOUS_INTEGRATION;
+  return env;
+}
+
 function wranglerSync(args, opts = {}) {
   return spawnSync(process.execPath, [wranglerBin(), ...args], {
     encoding: 'utf8',
@@ -186,19 +195,57 @@ function wranglerInherit(args) {
   console.log(`\n→ wrangler ${args.join(' ')}\n`);
   const result = spawnSync(process.execPath, [wranglerBin(), ...args], {
     stdio: 'inherit',
+    env: wranglerEnvForInteractive(),
   });
   if ((result.status ?? 1) !== 0) {
     throw new Error(`wrangler ${args[0]} failed`);
   }
 }
 
+/**
+ * Must inherit the real console. Piped stdin makes Wrangler think it is in CI
+ * ("set CLOUDFLARE_API_TOKEN") even when the parent wizard is interactive.
+ */
 function wranglerLoggedIn() {
-  try {
-    wranglerCapture(['whoami']);
-    return true;
-  } catch {
-    return false;
+  const result = spawnSync(process.execPath, [wranglerBin(), 'whoami'], {
+    stdio: 'inherit',
+    env: wranglerEnvForInteractive(),
+  });
+  return (result.status ?? 1) === 0;
+}
+
+function ensureCloudflareLogin() {
+  if (wranglerLoggedIn()) {
+    console.log('✓ Cloudflare login OK');
+    return;
   }
+
+  console.log(`
+Log in to Cloudflare (browser window will open)…
+Tip: if this fails on Windows, run this once in the same terminal, then re-run the wizard:
+
+  npx wrangler login
+`);
+  try {
+    wranglerInherit(['login']);
+  } catch (err) {
+    console.error(`
+Cloudflare login did not finish.
+
+Your terminal is interactive, but Wrangler still needs a browser OAuth login
+(or a CLOUDFLARE_API_TOKEN). On Windows prefer PowerShell or Command Prompt.
+
+  npx wrangler login
+  npx wrangler whoami
+  npm run onboard
+`);
+    throw err;
+  }
+
+  if (!wranglerLoggedIn()) {
+    throw new Error('Still not logged in after wrangler login. Run: npx wrangler login');
+  }
+  console.log('✓ Cloudflare login OK');
 }
 
 /** Extract JSON when wrangler appends ANSI warnings after the payload. */
@@ -583,7 +630,7 @@ and optional deploy. It does NOT delete existing D1 data.
 
       // --yes on a machine with production config → deploy-only (never wipe/recreate).
       if (await yes('Deploy code only (safe — keeps all pubs & branding in D1)?', true)) {
-        if (!wranglerLoggedIn()) wranglerInherit(['login']);
+        ensureCloudflareLogin();
         run('npm run deploy');
         console.log('\n✓ Deploy complete. Your D1 data was not modified.\n');
         rl.close();
@@ -601,12 +648,7 @@ and optional deploy. It does NOT delete existing D1 data.
     run('npm install');
   }
 
-  if (!wranglerLoggedIn()) {
-    console.log('Log in to Cloudflare (browser window will open)…');
-    wranglerInherit(['login']);
-  } else {
-    console.log('✓ Cloudflare login OK');
-  }
+  ensureCloudflareLogin();
 
   // Always start from the example when config is missing.
   // Avoid short-circuit bugs that steal the first typed answer as the worker name.
