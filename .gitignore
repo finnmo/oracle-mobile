@@ -17,3 +17,9 @@ test.py
 .venv/
 # Private per-deploy backups (venues, branding) — do not publish
 instances/*/
+# Local / AI tooling (not part of the public template)
+.claude/
+.impeccable/
+.cursor/
+.DS_Store
+**/.DS_Store
