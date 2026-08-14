@@ -770,7 +770,7 @@ Or for a fully non-interactive run (after login / with CLOUDFLARE_API_TOKEN):
 
   if (SANDBOX) {
     console.log(`Sandbox mode: writes ${CONFIG} only (never touches wrangler.toml).
-You will choose Worker/D1 names, schedule, admin password, and deploy.
+Cloudflare login runs first, then you choose Worker/D1 names, schedule, admin password, and deploy.
 `);
   } else if (YES) {
     console.log(`Auto mode (--yes): accepting all defaults for a brand-new site.
@@ -778,10 +778,17 @@ Writes ${CONFIG}. Does not run if a protected production config is present
 (unless you choose deploy-only interactively — --yes takes deploy-only).
 `);
   } else {
-    console.log(`This walks you through Cloudflare login, schedule, database, secrets,
+    console.log(`This walks you through Cloudflare login (first), schedule, database, secrets,
 and optional deploy. It does NOT delete existing D1 data.
 `);
   }
+
+  if (!existsSync('node_modules')) {
+    run('npm install');
+  }
+
+  console.log('\n── Cloudflare login ──');
+  ensureCloudflareLogin();
 
   if (!SANDBOX) {
     const hasWrangler = existsSync('wrangler.toml');
@@ -795,7 +802,6 @@ and optional deploy. It does NOT delete existing D1 data.
 
       // --yes on a machine with production config → deploy-only (never wipe/recreate).
       if (await yes('Deploy code only (safe — keeps all pubs & branding in D1)?', true)) {
-        ensureCloudflareLogin();
         run('npm run deploy');
         console.log('\n✓ Deploy complete. Your D1 data was not modified.\n');
         rl.close();
@@ -808,12 +814,6 @@ and optional deploy. It does NOT delete existing D1 data.
       }
     }
   }
-
-  if (!existsSync('node_modules')) {
-    run('npm install');
-  }
-
-  ensureCloudflareLogin();
 
   // Always start from the example when config is missing.
   // Avoid short-circuit bugs that steal the first typed answer as the worker name.

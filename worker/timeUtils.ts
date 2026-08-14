@@ -75,22 +75,6 @@ export function isPotentialRoundAnchorPerthYmd(perthYmdStr: string): boolean {
   return isPotentialRoundAnchorYmd(perthYmdStr, DEFAULT_SCHEDULE);
 }
 
-function collectPotentialAnchorTimingsInRange(
-  centerYmd: string,
-  daysBack: number,
-  daysForward: number,
-  schedule: ScheduleConfig
-): RoundTimings[] {
-  const out: RoundTimings[] = [];
-  for (let i = -daysBack; i <= daysForward; i++) {
-    const ymd = addZonedDays(centerYmd, i, schedule.timezone);
-    if (isPotentialRoundAnchorYmd(ymd, schedule)) {
-      out.push(computeRoundTimingsFromAnchorYmd(ymd, schedule));
-    }
-  }
-  return out;
-}
-
 export function computeRoundTimingsFromAnchorYmd(
   anchorYmd: string,
   schedule: ScheduleConfig = DEFAULT_SCHEDULE
@@ -110,30 +94,40 @@ export function computeRoundTimingsFromAnchorYmd(
   return { weekKey, announceAtUtc, meetAtUtc, rateOpenAtUtc, rateCloseAtUtc };
 }
 
+/**
+ * Active vote/rating weekKey for `now`.
+ *
+ * Uses a short backward scan (in-flight round may have started on a prior calendar day)
+ * plus a forward scan — avoids collecting 40+ day windows (Workers Free CPU limit).
+ */
 export function getVoteAndRoundAnchorYmd(
   now: Date,
   schedule: ScheduleConfig = DEFAULT_SCHEDULE
 ): string {
   const today = zonedYmd(now, schedule.timezone);
   const nowIso = now.toISOString();
-  const candidates = collectPotentialAnchorTimingsInRange(today, 12, 28, schedule);
-  const open = candidates.filter((t) => t.rateCloseAtUtc > nowIso);
-  const inFlight = open.find((t) => t.announceAtUtc <= nowIso && nowIso < t.rateCloseAtUtc);
-  if (inFlight) return inFlight.weekKey;
+  const tz = schedule.timezone;
 
-  const future = open
-    .filter((t) => t.announceAtUtc > nowIso)
-    .sort((a, b) => a.announceAtUtc.localeCompare(b.announceAtUtc));
-  if (future.length > 0) return future[0].weekKey;
-
-  for (let i = 0; i <= 35; i++) {
-    const ymd = addZonedDays(today, i, schedule.timezone);
+  // Rating/voting window can span anchor day + next calendar day (close at 23:59).
+  for (let i = 0; i >= -3; i--) {
+    const ymd = addZonedDays(today, i, tz);
     if (!isPotentialRoundAnchorYmd(ymd, schedule)) continue;
     const t = computeRoundTimingsFromAnchorYmd(ymd, schedule);
-    if (t.rateCloseAtUtc > nowIso) return t.weekKey;
+    if (t.announceAtUtc <= nowIso && nowIso < t.rateCloseAtUtc) {
+      return t.weekKey;
+    }
   }
 
-  return computeRoundTimingsFromAnchorYmd(addZonedDays(today, 7, schedule.timezone), schedule).weekKey;
+  // Pre-announce voting: earliest upcoming anchor whose round has not closed yet.
+  for (let i = 0; i <= 21; i++) {
+    const ymd = addZonedDays(today, i, tz);
+    if (!isPotentialRoundAnchorYmd(ymd, schedule)) continue;
+    const t = computeRoundTimingsFromAnchorYmd(ymd, schedule);
+    if (t.rateCloseAtUtc <= nowIso) continue;
+    if (t.announceAtUtc > nowIso) return t.weekKey;
+  }
+
+  return computeRoundTimingsFromAnchorYmd(addZonedDays(today, 7, tz), schedule).weekKey;
 }
 
 /** @deprecated */

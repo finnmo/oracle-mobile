@@ -6,10 +6,13 @@ import {
   utcYmdPlusOneDay,
   computeRoundTimingsFromAnchorYmd,
   isPotentialRoundAnchorPerthYmd,
+  isPotentialRoundAnchorYmd,
   tryResolveCronAnnounceAnchorPerthYmd,
   getVoteAndRoundAnchorPerthYmd,
+  getVoteAndRoundAnchorYmd,
   getNextRoundTimings,
 } from './timeUtils';
+import { DEFAULT_SCHEDULE, ScheduleConfig, addZonedDays, getSchedule, zonedYmd } from './schedule';
 
 // ── perthYmd ────────────────────────────────────────────────────────────────
 
@@ -289,4 +292,95 @@ describe('isPotentialRoundAnchorPerthYmd edge cases', () => {
   it('returns false for Monday', () => {
     expect(isPotentialRoundAnchorPerthYmd('2026-03-23')).toBe(false);
   });
+});
+
+// ── getVoteAndRoundAnchorYmd (custom schedules + CPU-safe scan) ─────────────
+
+const WEDNESDAY_SCHEDULE: ScheduleConfig = {
+  timezone: 'Australia/Perth',
+  announceWeekday: 3,
+  announceLocalTime: '14:00',
+  meetLocalTime: '16:00',
+  rateOpenLocalTime: '16:20',
+  rateCloseLocalTime: '23:59',
+  holidayShift: 'none',
+};
+
+/** Legacy wide-window reference — used only to verify the optimized scan matches. */
+function bruteForceVoteAnchorYmd(now: Date, schedule: ScheduleConfig): string {
+  const today = zonedYmd(now, schedule.timezone);
+  const nowIso = now.toISOString();
+  const candidates = [];
+  for (let i = -12; i <= 28; i++) {
+    const ymd = addZonedDays(today, i, schedule.timezone);
+    if (isPotentialRoundAnchorYmd(ymd, schedule)) {
+      candidates.push(computeRoundTimingsFromAnchorYmd(ymd, schedule));
+    }
+  }
+  const open = candidates.filter((t) => t.rateCloseAtUtc > nowIso);
+  const inFlight = open.find((t) => t.announceAtUtc <= nowIso && nowIso < t.rateCloseAtUtc);
+  if (inFlight) return inFlight.weekKey;
+
+  const future = open
+    .filter((t) => t.announceAtUtc > nowIso)
+    .sort((a, b) => a.announceAtUtc.localeCompare(b.announceAtUtc));
+  if (future.length > 0) return future[0].weekKey;
+
+  for (let i = 0; i <= 35; i++) {
+    const ymd = addZonedDays(today, i, schedule.timezone);
+    if (!isPotentialRoundAnchorYmd(ymd, schedule)) continue;
+    const t = computeRoundTimingsFromAnchorYmd(ymd, schedule);
+    if (t.rateCloseAtUtc > nowIso) return t.weekKey;
+  }
+
+  return computeRoundTimingsFromAnchorYmd(addZonedDays(today, 7, schedule.timezone), schedule).weekKey;
+}
+
+describe('getVoteAndRoundAnchorYmd custom schedule', () => {
+  it('targets upcoming Wednesday before announce (gbfb-oracle style)', () => {
+    expect(getVoteAndRoundAnchorYmd(new Date('2026-08-14T06:23:35.542Z'), WEDNESDAY_SCHEDULE)).toBe(
+      '2026-08-19'
+    );
+  });
+
+  it('keeps current Wednesday during the rating window', () => {
+    expect(getVoteAndRoundAnchorYmd(new Date('2026-08-19T08:00:00.000Z'), WEDNESDAY_SCHEDULE)).toBe(
+      '2026-08-19'
+    );
+  });
+});
+
+describe('getVoteAndRoundAnchorYmd matches legacy wide-window scan', () => {
+  const schedules = [DEFAULT_SCHEDULE, WEDNESDAY_SCHEDULE];
+
+  for (const schedule of schedules) {
+    it(
+      `parity for ${schedule.announceWeekday}/${schedule.holidayShift} over sample dates`,
+      () => {
+        const start = Date.parse('2026-01-01T00:00:00Z');
+        for (let t = start; t < start + 90 * 86400000; t += 24 * 3600000) {
+          const now = new Date(t);
+          expect(getVoteAndRoundAnchorYmd(now, schedule)).toBe(bruteForceVoteAnchorYmd(now, schedule));
+        }
+      },
+      15000
+    );
+  }
+
+  it('parity with onboard-style env schedule', () => {
+    const schedule = getSchedule({
+      SCHEDULE_TIMEZONE: 'Australia/Perth',
+      SCHEDULE_ANNOUNCE_WEEKDAY: '3',
+      SCHEDULE_ANNOUNCE_TIME: '14:00',
+      SCHEDULE_MEET_TIME: '16:00',
+      SCHEDULE_RATE_OPEN_TIME: '16:20',
+      SCHEDULE_RATE_CLOSE_TIME: '23:59',
+      SCHEDULE_HOLIDAY_SHIFT: 'none',
+    });
+    const start = Date.parse('2026-08-01T00:00:00Z');
+    for (let t = start; t < start + 31 * 86400000; t += 24 * 3600000) {
+      const now = new Date(t);
+      expect(getVoteAndRoundAnchorYmd(now, schedule)).toBe(bruteForceVoteAnchorYmd(now, schedule));
+    }
+  }, 15000);
 });
