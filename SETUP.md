@@ -2,6 +2,8 @@
 
 Works on **Windows, macOS, and Linux** (Node.js + npm). You do not need Mac-specific tools.
 
+Licensed under the [MIT License](LICENSE).
+
 ## Repo = blank template · Each deploy = its own branding in D1
 
 | Layer | What it is |

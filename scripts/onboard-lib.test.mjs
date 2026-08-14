@@ -165,7 +165,7 @@ describe('isIncompleteWorkersDevOrigin', () => {
   });
 
   it('does not treat custom domains as incomplete', () => {
-    expect(isIncompleteWorkersDevOrigin('https://picker.example.com', 'oracle')).toBe(false);
+    expect(isIncompleteWorkersDevOrigin('https://pubs.example.com', 'oracle')).toBe(false);
     expect(isIncompleteWorkersDevOrigin('https://picker.example.com', 'my-weekly-picker')).toBe(false);
   });
 });
@@ -183,7 +183,7 @@ describe('shouldSyncSiteOriginToWorkersDev', () => {
     expect(shouldSyncSiteOriginToWorkersDev('https://picker.example.com', live, 'my-weekly-picker')).toBe(
       false
     );
-    expect(shouldSyncSiteOriginToWorkersDev('https://picker.example.com', live, 'oracle')).toBe(false);
+    expect(shouldSyncSiteOriginToWorkersDev('https://pubs.example.com', live, 'oracle')).toBe(false);
   });
 
   it('no-ops when already correct', () => {
