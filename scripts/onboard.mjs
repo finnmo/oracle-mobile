@@ -273,15 +273,14 @@ function wranglerLoggedIn() {
   return (result.status ?? 1) === 0;
 }
 
-function printWindowsLoginHelp() {
+function printLoginHelp() {
+  const isWin = process.platform === 'win32';
   console.error(`
-Cloudflare login must be done in this terminal BEFORE the wizard.
+Cloudflare login did not finish${isWin ? ' (common on Windows when launched from npm)' : ''}.
 
-On Windows, spawning "wrangler login" from npm often fails (no browser,
-UV_HANDLE_CLOSING, or "set CLOUDFLARE_API_TOKEN"). Use PowerShell or cmd:
+In this same terminal, run:
 
-  Remove-Item Env:CI -ErrorAction SilentlyContinue
-  npx wrangler login
+  ${isWin ? 'Remove-Item Env:CI -ErrorAction SilentlyContinue\n  ' : ''}npx wrangler login
   npx wrangler whoami
 
 Then re-run:
@@ -290,8 +289,36 @@ Then re-run:
 
 Or set a token instead of browser login:
   https://developers.cloudflare.com/fundamentals/api/get-started/create-token/
-  $env:CLOUDFLARE_API_TOKEN="your-token-here"
+  ${isWin ? '$env:CLOUDFLARE_API_TOKEN="your-token-here"' : 'export CLOUDFLARE_API_TOKEN=your-token-here'}
 `);
+}
+
+/**
+ * Open the Wrangler OAuth browser flow. Returns true if login appears to succeed.
+ * On Windows, retries via `npx` + shell when the direct node spawn fails.
+ */
+function runWranglerLogin() {
+  console.log(`
+Log in to Cloudflare (browser window will open)…
+`);
+
+  let result = spawnSync(process.execPath, [wranglerBin(), 'login'], {
+    stdio: 'inherit',
+    env: wranglerEnv(),
+  });
+  if ((result.status ?? 1) === 0) return true;
+
+  if (process.platform === 'win32') {
+    console.log('\nRetrying with: npx wrangler login\n');
+    result = spawnSync('npx', ['wrangler', 'login'], {
+      stdio: 'inherit',
+      env: wranglerEnv(),
+      shell: true,
+    });
+    if ((result.status ?? 1) === 0) return true;
+  }
+
+  return false;
 }
 
 function ensureCloudflareLogin() {
@@ -308,16 +335,6 @@ function ensureCloudflareLogin() {
     return;
   }
 
-  // Windows: do not spawn wrangler login from the wizard — browser OAuth +
-  // libuv often crashes before the page opens, and the wizard never reaches prompts.
-  if (process.platform === 'win32') {
-    if (!hasWranglerOAuthFile() && !hasCloudflareApiToken()) {
-      console.error('No Wrangler OAuth login found yet (and no CLOUDFLARE_API_TOKEN).');
-    }
-    printWindowsLoginHelp();
-    process.exit(1);
-  }
-
   if (!process.stdin.isTTY) {
     console.error(`
 Not logged in to Cloudflare, and this terminal has no interactive TTY.
@@ -331,23 +348,18 @@ Or set CLOUDFLARE_API_TOKEN.
     process.exit(1);
   }
 
-  console.log(`
-Log in to Cloudflare (browser window will open)…
-`);
-  try {
-    wranglerInherit(['login']);
-  } catch {
-    console.error(`
-Cloudflare login did not finish. Run manually, then re-run the wizard:
+  if (!hasWranglerOAuthFile() && !hasCloudflareApiToken()) {
+    console.log('Not logged in to Cloudflare yet — starting login…');
+  }
 
-  npx wrangler login
-  npx wrangler whoami
-`);
+  if (!runWranglerLogin()) {
+    printLoginHelp();
     process.exit(1);
   }
 
   if (!wranglerLoggedIn()) {
-    console.error('Still not logged in after wrangler login. Run: npx wrangler login');
+    console.error('Still not logged in after wrangler login.');
+    printLoginHelp();
     process.exit(1);
   }
   console.log('✓ Cloudflare login OK');

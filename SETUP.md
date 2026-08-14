@@ -26,9 +26,10 @@ Same commands in **PowerShell**, **Command Prompt**, or **Terminal**.
 The wizard: Cloudflare login → create Worker + D1 → admin password → empty tables → deploy.  
 No Cloudflare Access / Google SSO setup required.
 
-On **Windows**, use **PowerShell** or **Command Prompt**. If login fails with a
-“non-interactive / CLOUDFLARE_API_TOKEN” message, **log in first** in that same
-terminal, then re-run the wizard:
+On **Windows**, use **PowerShell** or **Command Prompt**. The wizard runs
+`wrangler login` for you when needed (browser OAuth). If that fails with a
+“non-interactive / CLOUDFLARE_API_TOKEN” / libuv message, log in once manually
+in the same terminal, then re-run:
 
 ```powershell
 Remove-Item Env:CI -ErrorAction SilentlyContinue
@@ -37,8 +38,7 @@ npx wrangler whoami
 npm run onboard:sandbox
 ```
 
-On Windows, do not expect the wizard itself to open the Cloudflare login browser —
-run `npx wrangler login` manually first (or set `CLOUDFLARE_API_TOKEN`).
+You can also set `CLOUDFLARE_API_TOKEN` instead of browser login.
 
 ### Trial / sandbox (non-technical — one command)
 
